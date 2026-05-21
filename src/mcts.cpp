@@ -64,12 +64,13 @@ double movePrior(const Position& p, const Move& m, int enemyKing) {
 }
 }  // namespace
 
-MCTS::~MCTS() { freeTree(root_); }
+MCTS::~MCTS() = default;   // pool_'s destructor releases every node's slab
 
+// Returns the subtree rooted at `n` to the pool's free-list.
 void MCTS::freeTree(Node* n) {
   if (!n) return;
   for (Node* c : n->children) freeTree(c);
-  delete n;
+  pool_.free(n);
 }
 
 static size_t countNodes(const Node* n) {
@@ -90,13 +91,13 @@ void MCTS::advance(const Move& m, const Position& newPos) {
     for (Node* c : root_->children)
       if (c != keep) freeTree(c);
     root_->children.clear();
-    delete root_;
+    pool_.free(root_);
     keep->parent = nullptr;
     root_ = keep;
     nodeCount_ = countNodes(root_);
   } else {
     freeTree(root_);
-    root_ = new Node();
+    root_ = pool_.alloc();
     root_->pos = newPos;
     nodeCount_ = 1;
   }
@@ -105,7 +106,7 @@ void MCTS::advance(const Move& m, const Position& newPos) {
 void MCTS::setRoot(const Position& p) {
   std::lock_guard<std::mutex> lk(mtx_);
   freeTree(root_);
-  root_ = new Node();
+  root_ = pool_.alloc();
   root_->pos = p;
   nodeCount_ = 1;
 }
@@ -192,7 +193,7 @@ void MCTS::iterate(uint64_t& rng, Scratch& sc) {
         n->untried.pop_back();
         float pri = n->untriedPriors.back();
         n->untriedPriors.pop_back();
-        Node* child = new Node();
+        Node* child = pool_.alloc();
         ++nodeCount_;
         child->parent = n;
         child->move = mv;

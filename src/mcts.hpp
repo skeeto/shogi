@@ -26,6 +26,59 @@ struct Node {
   double terminalBlack = 0.0;
 };
 
+// Slab allocator for Nodes.  Nodes are carved from large slabs and recycled
+// through a free-list (threaded through the unused `parent` of a free node),
+// so growing the tree costs no per-node malloc once warm.  Recycled nodes keep
+// their vectors' capacity, so re-expanding them allocates nothing either.
+//
+// Memory is bounded by the peak tree size (MAX_NODES) but is held until the
+// pool is destroyed rather than returned between moves.  Not thread-safe: the
+// MCTS mutex serialises every pool access.
+class NodePool {
+ public:
+  ~NodePool() {
+    for (Node* slab : slabs_) delete[] slab;
+  }
+  Node* alloc() {
+    if (free_) {                          // recycle a freed node
+      Node* n = free_;
+      free_ = n->parent;
+      reset(n);
+      return n;
+    }
+    if (slabIdx_ >= SLAB) {               // carve from a fresh slab
+      slabs_.push_back(new Node[SLAB]);
+      slabIdx_ = 0;
+    }
+    return &slabs_.back()[slabIdx_++];
+  }
+  void free(Node* n) {
+    n->parent = free_;                    // `parent` doubles as the list link
+    free_ = n;
+  }
+
+ private:
+  static void reset(Node* n) {
+    n->move = Move{};
+    n->parent = nullptr;
+    n->children.clear();                  // clear() keeps capacity for reuse
+    n->untried.clear();
+    n->untriedPriors.clear();
+    n->visits = 0;
+    n->valueBlack = 0.0;
+    n->virtualLoss = 0;
+    n->prior = 1.0;
+    n->expanded = false;
+    n->terminal = false;
+    n->terminalBlack = 0.0;
+    // `pos` is overwritten by the caller right after alloc().
+  }
+  static constexpr size_t SLAB = 8192;
+  std::vector<Node*> slabs_;
+  size_t slabIdx_ = SLAB;                 // SLAB => first alloc() makes a slab
+  Node*  free_ = nullptr;
+};
+
 class MCTS {
  public:
   MCTS() = default;
@@ -61,6 +114,7 @@ class MCTS {
   void  freeTree(Node* n);
 
   std::mutex mtx_;
+  NodePool pool_;
   Node*  root_      = nullptr;
   size_t nodeCount_ = 0;
 };
