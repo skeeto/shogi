@@ -277,21 +277,88 @@ static void genPseudo(const Position& p, std::vector<Move>& out) {
   }
 }
 
+// Mark friendly pieces absolutely pinned to `king` by an enemy slider, storing
+// the pin axis (drow,dcol) per pinned square; 0 for everything else.
+static void computePins(const Position& p, Color me, int king,
+                        signed char* pinDR, signed char* pinDC) {
+  for (int i = 0; i < N_SQ; ++i) { pinDR[i] = 0; pinDC[i] = 0; }
+  if (king < 0) return;
+  static const D RAYS8[8] =
+      {{-1,-1},{-1,1},{1,-1},{1,1},{-1,0},{1,0},{0,-1},{0,1}};
+  int kr = rowOf(king), kc = colOf(king);
+  for (const D& dir : RAYS8) {
+    int r = kr + dir.dr, c = kc + dir.dc, blocker = -1;
+    while (r >= 0 && r < 9 && c >= 0 && c < 9) {
+      Piece q = p.board[sq(r, c)];
+      if (q) {
+        if (blocker < 0) {
+          if (colorOf(q) != me) break;          // first piece met is an enemy
+          blocker = sq(r, c);
+        } else {
+          if (colorOf(q) != me) {               // second piece: does it pin?
+            D rays[4];
+            int n = pieceRays(q, rays);
+            for (int i = 0; i < n; ++i)
+              if (rays[i].dr == -dir.dr && rays[i].dc == -dir.dc) {
+                pinDR[blocker] = (signed char)dir.dr;
+                pinDC[blocker] = (signed char)dir.dc;
+              }
+          }
+          break;
+        }
+      }
+      r += dir.dr; c += dir.dc;
+    }
+  }
+}
+
 void generateLegalMoves(const Position& p, std::vector<Move>& out) {
   out.clear();
   std::vector<Move> pseudo;
   pseudo.reserve(128);
   genPseudo(p, pseudo);
   Color me = p.stm();
+  int myKing = kingSquare(p, me);
+  bool checked = (myKing >= 0) && isAttacked(p, myKing, opp(me));
+
+  // When not in check, legality is decided without a make-and-test for most
+  // moves: a drop can never expose our own king, and a non-king move is legal
+  // unless the mover is pinned and steps off the pin line.
+  signed char pinDR[N_SQ], pinDC[N_SQ];
+  int kr = 0, kc = 0;
+  if (!checked) {
+    computePins(p, me, myKing, pinDR, pinDC);
+    if (myKing >= 0) { kr = rowOf(myKing); kc = colOf(myKing); }
+  }
+
   for (const Move& m : pseudo) {
-    Position c = p;
-    doMove(c, m);
-    if (inCheck(c, me)) continue;                         // leaves own king in check
-    if (m.isDrop() && m.drop == PT_PAWN && inCheck(c, opp(me))) {
+    bool isPawnDrop = m.isDrop() && m.drop == PT_PAWN;
+    if (checked) {
+      // In check: confirm the move actually leaves our king safe.
+      Position c = p;
+      doMove(c, m);
+      int ks = (!m.isDrop() && m.from == myKing) ? int(m.to) : myKing;
+      if (ks >= 0 && isAttacked(c, ks, opp(me))) continue;
+    } else if (!m.isDrop()) {
+      if (m.from == myKing) {
+        Position c = p;
+        doMove(c, m);
+        if (isAttacked(c, m.to, opp(me))) continue;        // king into check
+      } else if (pinDR[m.from] || pinDC[m.from]) {
+        int cross = (rowOf(m.to) - kr) * pinDC[m.from]
+                  - (colOf(m.to) - kc) * pinDR[m.from];
+        if (cross != 0) continue;                          // off the pin line
+      }
+    }
+    if (isPawnDrop) {
       // Uchifuzume: dropping a pawn for immediate checkmate is illegal.
-      std::vector<Move> reply;
-      generateLegalMoves(c, reply);
-      if (reply.empty()) continue;
+      Position c = p;
+      doMove(c, m);
+      if (inCheck(c, opp(me))) {
+        std::vector<Move> reply;
+        generateLegalMoves(c, reply);
+        if (reply.empty()) continue;
+      }
     }
     out.push_back(m);
   }
