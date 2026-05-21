@@ -24,7 +24,7 @@ constexpr int BOARD_PX = 9 * CELL;
 constexpr int HAND_W = 188, HAND_EH = 74;
 constexpr int WHITE_HAND_X = 44, BLACK_HAND_X = 786;
 constexpr int WBAR_X = 18, BBAR_X = 990, BAR_W = 16;
-constexpr Uint64 THINK_MS = 2200;          // computer search time per move
+constexpr Uint64 THINK_MS = 4000;          // computer search time per move
 
 struct RGBA { Uint8 r, g, b, a; };
 
