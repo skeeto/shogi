@@ -19,7 +19,11 @@
 </style>
 </head>
 <body>
-<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<!-- The width/height attributes give the canvas an intrinsic size; without
+     them the flex layout collapses it and SDL locks onto a tiny render
+     target.  They must match WIN_W/WIN_H in src/ui.cpp. -->
+<canvas id="canvas" width="1024" height="720"
+        tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
 <div id="status">loading...</div>
 
 <!-- Tries to cross-origin-isolate the page (via a service worker) so the
