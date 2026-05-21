@@ -7,7 +7,7 @@
 
 namespace shogi {
 
-#ifndef __EMSCRIPTEN__
+#ifndef SHOGI_NO_THREADS
 namespace {
 // SplitMix64 finalizer - scrambles a counter into a well-spread 64-bit seed.
 uint64_t mixSeed(uint64_t z) {
@@ -20,13 +20,16 @@ uint64_t mixSeed(uint64_t z) {
 #endif
 
 Engine::Engine(int threads, double cpuct) {
-#ifdef __EMSCRIPTEN__
+#ifdef SHOGI_NO_THREADS
   (void)threads;
   nThreads_ = 1;                       // single-threaded: no SharedArrayBuffer
 #else
   int hw = int(std::thread::hardware_concurrency());
   if (hw <= 0) hw = 2;
   nThreads_ = (threads > 0) ? threads : std::max(1, hw - 1);
+#ifdef __EMSCRIPTEN__
+  if (nThreads_ > 7) nThreads_ = 7;    // bounded by -sPTHREAD_POOL_SIZE
+#endif
 #endif
   mcts_.cpuct = cpuct;
 }
@@ -34,7 +37,7 @@ Engine::Engine(int threads, double cpuct) {
 Engine::~Engine() { stop(); }
 
 void Engine::startWorkers() {
-#ifndef __EMSCRIPTEN__
+#ifndef SHOGI_NO_THREADS
   run_ = true;
   workers_.reserve(nThreads_);
   std::random_device rd;
@@ -50,7 +53,7 @@ void Engine::startWorkers() {
 }
 
 void Engine::stop() {
-#ifndef __EMSCRIPTEN__
+#ifndef SHOGI_NO_THREADS
   run_ = false;
   for (std::thread& t : workers_)
     if (t.joinable()) t.join();
@@ -59,7 +62,7 @@ void Engine::stop() {
 }
 
 void Engine::pump(int ms) {
-#ifdef __EMSCRIPTEN__
+#ifdef SHOGI_NO_THREADS
   auto deadline = std::chrono::steady_clock::now() +
                   std::chrono::milliseconds(ms);
   do {

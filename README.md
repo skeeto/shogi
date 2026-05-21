@@ -43,14 +43,18 @@ cmake --build build -j
 With the [Emscripten SDK](https://emscripten.org) on `PATH`:
 
 ```sh
-web/build.sh           # -> build-web/shogi.{html,js,wasm}
-python3 -m http.server -d build-web      # then open shogi.html
+web/build.sh                            # -> build-web/
+python3 -m http.server -d build-web     # then open index.html
 ```
 
-The web build is **single-threaded** — no `SharedArrayBuffer`, so it needs no
-`COOP`/`COEP` headers and can be served from any static host (GitHub Pages
-included). The AI runs on the main thread (one core) rather than the native
-multi-threaded search, so it is correspondingly slower.
+`web/build.sh` builds two variants — multi-threaded (`-pthread`) and
+single-threaded — and assembles `build-web/` with a loader. `index.html` tries
+to cross-origin-isolate the page with a service worker (`enable-threads.js`);
+if that succeeds the browser provides `SharedArrayBuffer` and the
+**multi-threaded** build is used, otherwise it falls back to the
+**single-threaded** build (one core, correspondingly slower AI). The result is
+fully static and needs no special server headers, so it deploys to any host,
+GitHub Pages included — just publish the contents of `build-web/`.
 
 ## Playing
 

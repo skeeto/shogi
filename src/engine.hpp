@@ -13,6 +13,13 @@
 #include <thread>
 #include <vector>
 
+// A single-threaded build: Emscripten compiled without pthreads (i.e. without
+// SharedArrayBuffer).  Native builds and the threaded wasm build search with a
+// worker pool; this build searches inline via Engine::pump().
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#define SHOGI_NO_THREADS 1
+#endif
+
 namespace shogi {
 
 class Engine {
@@ -44,7 +51,8 @@ class Engine {
   MCTS mcts_;
   std::vector<std::thread> workers_;
   std::atomic<bool> run_{false};
-  uint64_t rng_ = 0x9e3779b97f4a7c15ULL;   // search RNG for the pump() path
+  // Search RNG for the pump() path; unused in threaded builds.
+  [[maybe_unused]] uint64_t rng_ = 0x9e3779b97f4a7c15ULL;
   int nThreads_;
 };
 

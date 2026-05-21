@@ -13,6 +13,12 @@ cmake --build build -j
 
 SDL3 is found locally or fetched (pinned tarball + SHA-256) via `FetchContent`.
 
+WebAssembly build: `web/build.sh` (needs the Emscripten SDK) builds two
+variants into `build-web/` — multi-threaded (`-pthread`, CMake `SHOGI_PTHREAD`)
+and single-threaded — and `web/index.html` picks one per browser. The
+single-threaded path (`SHOGI_NO_THREADS`, Emscripten without pthreads) has no
+worker threads: `Engine::pump()` runs the search inline each frame.
+
 ## Source layout
 
 | File | Responsibility |
