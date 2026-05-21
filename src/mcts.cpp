@@ -7,25 +7,8 @@
 namespace shogi {
 
 namespace {
-constexpr double EXPLORATION  = 1.3;      // UCT constant: explore vs. exploit
-constexpr int    ROLLOUT_CAP  = 44;       // random plies before static eval
-constexpr size_t MAX_NODES    = 700000;   // tree-size ceiling
-
-// Per-thread random number generator.  Each worker owns a 64-bit state
-// (`rng`) and passes it in explicitly - there is no shared or thread_local
-// generator.  `rand32` is a plain LCG yielding a 31-bit value; `randint`
-// maps that into a range with a multiply-shift, avoiding a division.
-inline int32_t rand32(uint64_t& rng) {
-  rng = rng * 0x3243f6a8885a308dULL + 1;
-  return int32_t(rng >> 33);
-}
-inline int32_t randint(uint64_t& rng, int32_t lo, int32_t hi) {
-  int32_t r = rand32(rng);          // r is 31-bit, so shift by 31 to scale
-  return int32_t((uint64_t(r) * uint64_t(hi - lo)) >> 31) + lo;
-}
-inline int32_t randint(uint64_t& rng, int32_t hi) {
-  return randint(rng, 0, hi);
-}
+constexpr double EXPLORATION = 1.3;       // UCT constant: explore vs. exploit
+constexpr size_t MAX_NODES   = 700000;    // tree-size ceiling
 }  // namespace
 
 MCTS::~MCTS() { freeTree(root_); }
@@ -78,26 +61,6 @@ Node* MCTS::selectChild(Node* n) {
   return best;
 }
 
-// One random playout, returning Black's result in [0,1].
-double MCTS::rollout(const Position& start, uint64_t& rng) {
-  Position p = start;
-  std::vector<Move> moves;
-  std::vector<Move> caps;
-  for (int ply = 0; ply < ROLLOUT_CAP; ++ply) {
-    generateLegalMoves(p, moves);
-    if (moves.empty())
-      return (p.stm() == BLACK) ? 0.0 : 1.0;      // checkmated
-    // Bias toward captures so playouts stay tactically meaningful.
-    caps.clear();
-    for (const Move& m : moves)
-      if (!m.isDrop() && p.board[m.to]) caps.push_back(m);
-    const std::vector<Move>& pool =
-        (!caps.empty() && (rand32(rng) & 3)) ? caps : moves;
-    doMove(p, pool[randint(rng, int32_t(pool.size()))]);
-  }
-  return evalBlackWinProb(p);
-}
-
 void MCTS::iterate(uint64_t& rng) {
   std::vector<Node*> path;
   Node* leaf = nullptr;
@@ -136,7 +99,7 @@ void MCTS::iterate(uint64_t& rng) {
     if (leaf->terminal) result = leaf->terminalBlack;
   }
 
-  if (!leaf->terminal) result = rollout(leaf->pos, rng);
+  if (!leaf->terminal) result = evalLeaf(leaf->pos);
 
   {
     std::lock_guard<std::mutex> lk(mtx_);

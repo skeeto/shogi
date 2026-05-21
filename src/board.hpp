@@ -128,6 +128,10 @@ void doMove(Position& p, const Move& m);
 // Static evaluation, returned as Black's win probability in [0,1].
 double evalBlackWinProb(const Position& p);
 
+// Leaf evaluation for the search: a capture-quiescence-settled static eval,
+// returned as Black's win probability in [0,1].
+double evalLeaf(const Position& p);
+
 // Human-readable move, e.g. "7g7f" or "P*5e" / "8h2b+".
 std::string moveToString(const Move& m);
 

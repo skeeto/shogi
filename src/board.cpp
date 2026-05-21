@@ -1,5 +1,6 @@
 // board.cpp - Shogi rules implementation.
 #include "board.hpp"
+#include <algorithm>
 #include <cmath>
 #include <random>
 #include <string>
@@ -418,9 +419,9 @@ static int kingSafety(const Position& p, Color c) {
   return score;
 }
 
-// Static evaluation: material + piece-square tables + king safety, mapped to
-// Black's win probability in [0,1].
-double evalBlackWinProb(const Position& p) {
+// Centipawn evaluation from Black's point of view: material + piece-square
+// tables + king safety.
+static int evalScore(const Position& p) {
   int score = 0;
   int phase = gamePhase(p);
 
@@ -442,8 +443,79 @@ double evalBlackWinProb(const Position& p) {
     score += (p.hand[BLACK][t] - p.hand[WHITE][t]) * v;
   }
   score += (kingSafety(p, BLACK) - kingSafety(p, WHITE)) * phase / 256;
+  return score;
+}
 
+// Logistic map from a centipawn score to a win probability.
+static double winProb(int score) {
   return 1.0 / (1.0 + std::exp(-double(score) / 512.0));
+}
+
+double evalBlackWinProb(const Position& p) { return winProb(evalScore(p)); }
+
+// Worth of a piece for capture ordering / quiescence (King: nominally huge).
+static int pieceValue(Piece q) {
+  PieceType t = typeOf(q);
+  if (t == PT_KING) return 15000;
+  return isPromoted(q) ? promoValue(t) : baseValue(t);
+}
+
+// Capture-only quiescence search.  Resolves hanging exchanges so the static
+// eval lands on a settled position; the score is centipawns for `p`'s side to
+// move.  When in check, every legal evasion is searched - that is what makes a
+// king grabbing a pawn into a mating net visible.  Operates on a by-value
+// Position, so it is safe to run outside the MCTS tree lock, exactly as the
+// old random rollout was.
+static const int Q_MATE = 32000;
+static int qsearch(Position p, int alpha, int beta, int depth) {
+  bool inChk = inCheck(p, p.stm());
+  int stand = (p.stm() == BLACK) ? evalScore(p) : -evalScore(p);
+
+  if (!inChk) {
+    if (stand >= beta) return stand;
+    if (stand > alpha) alpha = stand;
+    if (depth <= 0) return alpha;
+  } else if (depth <= 0) {
+    return stand;
+  }
+
+  std::vector<Move> moves;
+  generateLegalMoves(p, moves);
+  if (moves.empty()) return -Q_MATE;          // checkmated
+
+  // Captures only when not in check; every evasion when in check.
+  struct Scored { Move m; int order; };
+  std::vector<Scored> pick;
+  for (const Move& m : moves) {
+    bool capture = !m.isDrop() && p.board[m.to] != 0;
+    if (inChk) {
+      pick.push_back({m, capture ? pieceValue(p.board[m.to]) : 0});
+    } else if (capture) {
+      int victim = pieceValue(p.board[m.to]);
+      if (stand + victim + 200 < alpha) continue;             // delta pruning
+      pick.push_back({m, victim * 16 - pieceValue(p.board[m.from])});  // MVV-LVA
+    }
+  }
+  if (pick.empty()) return inChk ? stand : alpha;
+
+  std::sort(pick.begin(), pick.end(),
+            [](const Scored& a, const Scored& b) { return a.order > b.order; });
+
+  int best = inChk ? -Q_MATE : stand;
+  for (const Scored& s : pick) {
+    Position c = p;
+    doMove(c, s.m);
+    int score = -qsearch(c, -beta, -alpha, depth - 1);
+    if (score > best) best = score;
+    if (best > alpha) alpha = best;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+double evalLeaf(const Position& p) {
+  int s = qsearch(p, -2 * Q_MATE, 2 * Q_MATE, 6);
+  return winProb((p.stm() == BLACK) ? s : -s);
 }
 
 // ---------------------------------------------------------------------------
