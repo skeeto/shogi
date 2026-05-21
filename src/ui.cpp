@@ -629,13 +629,6 @@ int App::run() {
     SDL_Log("CreateRenderer failed: %s", SDL_GetError());
     return 1;
   }
-#ifdef __EMSCRIPTEN__
-  {
-    int ow = 0, oh = 0;
-    SDL_GetRenderOutputSize(ren_, &ow, &oh);
-    SDL_Log("shogi: render output %dx%d (want %dx%d)", ow, oh, WIN_W, WIN_H);
-  }
-#endif
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
 
