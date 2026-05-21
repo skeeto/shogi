@@ -51,9 +51,11 @@ class Engine {
   MCTS mcts_;
   std::vector<std::thread> workers_;
   std::atomic<bool> run_{false};
-  // Search RNG for the pump() path; unused in threaded builds.
-  [[maybe_unused]] uint64_t rng_ = 0x9e3779b97f4a7c15ULL;
   int nThreads_;
+#ifdef SHOGI_NO_THREADS
+  uint64_t rng_ = 0x9e3779b97f4a7c15ULL;   // search RNG for the pump() path
+  Scratch  scratch_;                       // reused search buffers for pump()
+#endif
 };
 
 }  // namespace shogi

@@ -39,10 +39,10 @@ class MCTS {
   // starts fresh from `newPos`.
   void advance(const Move& m, const Position& newPos);
 
-  // Runs exactly one MCTS iteration.  Safe to call from many threads.  The
-  // leaf is now scored by a deterministic quiescence eval, so `rng` is no
-  // longer used; it is kept to avoid churning the Engine worker loop.
-  void iterate(uint64_t& rng);
+  // Runs exactly one MCTS iteration.  Safe to call from many threads; each
+  // caller passes its own Scratch (reused buffers, never shared).  `rng` is
+  // unused (the quiescence leaf eval is deterministic) but kept for now.
+  void iterate(uint64_t& rng, Scratch& sc);
 
   struct Stats {
     Move   bestMove     = nullMove();
@@ -57,7 +57,7 @@ class MCTS {
 
  private:
   Node* selectChild(Node* n);
-  void  expand(Node* n);
+  void  expand(Node* n, Scratch& sc);
   void  freeTree(Node* n);
 
   std::mutex mtx_;

@@ -107,13 +107,35 @@ struct Position {
 
 enum Result : uint8_t { ONGOING, BLACK_WIN, WHITE_WIN, DRAW };
 
+struct Node;  // defined in mcts.hpp
+
+// ---------------------------------------------------------------------------
+// Scratch - reusable buffers so the search hot path does no heap allocation
+// once warm.  Each worker thread owns one; a Scratch is never shared between
+// threads.  qsearch indexes its per-depth slots by recursion depth.
+// ---------------------------------------------------------------------------
+constexpr int Q_DEPTH = 6;          // quiescence depth; slots sized Q_DEPTH+2
+struct Scratch {
+  struct QMove { Move m; int order; };
+  std::vector<Move>   pseudo;               // genPseudo output
+  std::vector<Move>   qmoves[Q_DEPTH + 2];  // qsearch legal moves, by depth
+  std::vector<QMove>  qpick[Q_DEPTH + 2];   // qsearch scored moves, by depth
+  std::vector<Move>   expandMoves;          // MCTS expand()
+  std::vector<double> expandPr;
+  std::vector<size_t> expandIdx;
+  std::vector<Node*>  path;                 // MCTS iterate() selection path
+};
+
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
 void     initZobrist();                       // call once at startup
 Position initialPosition();
 
-// Pseudo-legal generation is filtered for king safety, so these are fully legal.
+// Pseudo-legal generation is filtered for king safety, so these are fully
+// legal.  The Scratch overload reuses buffers; the convenience overload
+// allocates a temporary Scratch for occasional callers.
+void generateLegalMoves(const Position& p, std::vector<Move>& out, Scratch& sc);
 void generateLegalMoves(const Position& p, std::vector<Move>& out);
 
 // Is `color`'s king attacked?
@@ -130,7 +152,7 @@ double evalBlackWinProb(const Position& p);
 
 // Leaf evaluation for the search: a capture-quiescence-settled static eval,
 // returned as Black's win probability in [0,1].
-double evalLeaf(const Position& p);
+double evalLeaf(const Position& p, Scratch& sc);
 
 // Human-readable move, e.g. "7g7f" or "P*5e" / "8h2b+".
 std::string moveToString(const Move& m);

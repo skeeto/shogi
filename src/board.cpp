@@ -313,10 +313,11 @@ static void computePins(const Position& p, Color me, int king,
   }
 }
 
-void generateLegalMoves(const Position& p, std::vector<Move>& out) {
+void generateLegalMoves(const Position& p, std::vector<Move>& out,
+                        Scratch& sc) {
   out.clear();
-  std::vector<Move> pseudo;
-  pseudo.reserve(128);
+  std::vector<Move>& pseudo = sc.pseudo;       // reused; no per-call allocation
+  pseudo.clear();
   genPseudo(p, pseudo);
   Color me = p.stm();
   int myKing = kingSquare(p, me);
@@ -352,7 +353,9 @@ void generateLegalMoves(const Position& p, std::vector<Move>& out) {
       }
     }
     if (isPawnDrop) {
-      // Uchifuzume: dropping a pawn for immediate checkmate is illegal.
+      // Uchifuzume: dropping a pawn for immediate checkmate is illegal.  This
+      // is rare, so the recursive check uses the convenience overload (its own
+      // Scratch) rather than perturbing `sc`.
       Position c = p;
       doMove(c, m);
       if (inCheck(c, opp(me))) {
@@ -363,6 +366,11 @@ void generateLegalMoves(const Position& p, std::vector<Move>& out) {
     }
     out.push_back(m);
   }
+}
+
+void generateLegalMoves(const Position& p, std::vector<Move>& out) {
+  Scratch sc;
+  generateLegalMoves(p, out, sc);
 }
 
 // ---------------------------------------------------------------------------
@@ -535,7 +543,7 @@ static int pieceValue(Piece q) {
 // Position, so it is safe to run outside the MCTS tree lock, exactly as the
 // old random rollout was.
 static const int Q_MATE = 32000;
-static int qsearch(Position p, int alpha, int beta, int depth) {
+static int qsearch(Position p, int alpha, int beta, int depth, Scratch& sc) {
   bool inChk = inCheck(p, p.stm());
   int stand = (p.stm() == BLACK) ? evalScore(p) : -evalScore(p);
 
@@ -547,13 +555,14 @@ static int qsearch(Position p, int alpha, int beta, int depth) {
     return stand;
   }
 
-  std::vector<Move> moves;
-  generateLegalMoves(p, moves);
+  // Per-depth scratch slots, so the buffers stay valid across the recursion.
+  std::vector<Move>& moves = sc.qmoves[depth];
+  generateLegalMoves(p, moves, sc);
   if (moves.empty()) return -Q_MATE;          // checkmated
 
   // Captures only when not in check; every evasion when in check.
-  struct Scored { Move m; int order; };
-  std::vector<Scored> pick;
+  std::vector<Scratch::QMove>& pick = sc.qpick[depth];
+  pick.clear();
   for (const Move& m : moves) {
     bool capture = !m.isDrop() && p.board[m.to] != 0;
     if (inChk) {
@@ -567,13 +576,15 @@ static int qsearch(Position p, int alpha, int beta, int depth) {
   if (pick.empty()) return inChk ? stand : alpha;
 
   std::sort(pick.begin(), pick.end(),
-            [](const Scored& a, const Scored& b) { return a.order > b.order; });
+            [](const Scratch::QMove& a, const Scratch::QMove& b) {
+              return a.order > b.order;
+            });
 
   int best = inChk ? -Q_MATE : stand;
-  for (const Scored& s : pick) {
+  for (const Scratch::QMove& s : pick) {
     Position c = p;
     doMove(c, s.m);
-    int score = -qsearch(c, -beta, -alpha, depth - 1);
+    int score = -qsearch(c, -beta, -alpha, depth - 1, sc);
     if (score > best) best = score;
     if (best > alpha) alpha = best;
     if (alpha >= beta) break;
@@ -581,8 +592,8 @@ static int qsearch(Position p, int alpha, int beta, int depth) {
   return best;
 }
 
-double evalLeaf(const Position& p) {
-  int s = qsearch(p, -2 * Q_MATE, 2 * Q_MATE, 6);
+double evalLeaf(const Position& p, Scratch& sc) {
+  int s = qsearch(p, -2 * Q_MATE, 2 * Q_MATE, Q_DEPTH, sc);
   return winProb((p.stm() == BLACK) ? s : -s);
 }
 

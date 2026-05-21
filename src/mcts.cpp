@@ -113,9 +113,9 @@ void MCTS::setRoot(const Position& p) {
 // Expand: discover the legal moves from `n`, or flag it terminal.  Moves are
 // stored sorted ascending by policy prior, so iterate() pops the most
 // promising candidate from the back of `untried`.
-void MCTS::expand(Node* n) {
-  std::vector<Move> moves;
-  generateLegalMoves(n->pos, moves);
+void MCTS::expand(Node* n, Scratch& sc) {
+  std::vector<Move>& moves = sc.expandMoves;       // reused scratch buffers
+  generateLegalMoves(n->pos, moves, sc);
   n->expanded = true;
   if (moves.empty()) {
     // Side to move has no legal reply -> that side loses.
@@ -125,18 +125,21 @@ void MCTS::expand(Node* n) {
   }
   size_t m = moves.size();
   int enemyKing = findKing(n->pos, opp(n->pos.stm()));
-  std::vector<double> pr(m);
+  std::vector<double>& pr = sc.expandPr;
+  pr.resize(m);
   double sum = 0.0;
   for (size_t i = 0; i < m; ++i) {
     pr[i] = movePrior(n->pos, moves[i], enemyKing);
     sum += pr[i];
   }
-  std::vector<size_t> idx(m);
+  std::vector<size_t>& idx = sc.expandIdx;
+  idx.resize(m);
   for (size_t i = 0; i < m; ++i) idx[i] = i;
   std::sort(idx.begin(), idx.end(),
             [&](size_t a, size_t b) { return pr[a] < pr[b]; });
   n->untried.resize(m);
   n->untriedPriors.resize(m);
+  n->children.reserve(m);                          // grown one child per visit
   for (size_t i = 0; i < m; ++i) {
     n->untried[i]       = moves[idx[i]];
     n->untriedPriors[i] = float(pr[idx[i]] / sum);     // normalised to sum 1
@@ -163,8 +166,10 @@ Node* MCTS::selectChild(Node* n) {
   return best;
 }
 
-void MCTS::iterate(uint64_t& rng) {
-  std::vector<Node*> path;
+void MCTS::iterate(uint64_t& rng, Scratch& sc) {
+  (void)rng;
+  std::vector<Node*>& path = sc.path;       // reused; cleared each iteration
+  path.clear();
   Node* leaf = nullptr;
   double result = 0.0;
 
@@ -181,7 +186,7 @@ void MCTS::iterate(uint64_t& rng) {
       path.push_back(n);
     }
     if (!n->terminal) {
-      if (!n->expanded) expand(n);
+      if (!n->expanded) expand(n, sc);
       if (!n->terminal && !n->untried.empty() && nodeCount_ < MAX_NODES) {
         Move mv = n->untried.back();
         n->untried.pop_back();
@@ -204,7 +209,7 @@ void MCTS::iterate(uint64_t& rng) {
     if (leaf->terminal) result = leaf->terminalBlack;
   }
 
-  if (!leaf->terminal) result = evalLeaf(leaf->pos);
+  if (!leaf->terminal) result = evalLeaf(leaf->pos, sc);
 
   {
     std::lock_guard<std::mutex> lk(mtx_);
