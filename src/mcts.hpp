@@ -15,10 +15,12 @@ struct Node {
   Node* parent = nullptr;
   std::vector<Node*> children;
   std::vector<Move>  untried;       // legal moves not yet expanded
+  std::vector<float> untriedPriors; // policy priors, parallel to `untried`
   Position pos;                     // position AT this node
   int    visits      = 0;
   double valueBlack   = 0.0;        // summed results, Black's perspective [0,1]
   int    virtualLoss = 0;
+  double prior       = 1.0;         // policy prior of the move into this node
   bool   expanded    = false;
   bool   terminal    = false;
   double terminalBlack = 0.0;

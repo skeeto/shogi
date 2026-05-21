@@ -3,12 +3,62 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 
 namespace shogi {
 
 namespace {
-constexpr double EXPLORATION = 1.3;       // UCT constant: explore vs. exploit
-constexpr size_t MAX_NODES   = 700000;    // tree-size ceiling
+constexpr double CPUCT     = 3.0;         // PUCT exploration constant
+constexpr size_t MAX_NODES = 700000;      // tree-size ceiling
+
+// Material value used only for capture-ordering in the policy prior.
+int pieceVal(Piece q) {
+  switch (typeOf(q)) {
+    case PT_PAWN:   return 90;
+    case PT_LANCE:  return 230;
+    case PT_KNIGHT: return 250;
+    case PT_SILVER: return 360;
+    case PT_GOLD:   return 440;
+    case PT_BISHOP: return 560;
+    case PT_ROOK:   return 640;
+    case PT_KING:   return 4000;
+    default:        return 0;
+  }
+}
+int findKing(const Position& p, Color c) {
+  Piece want = makePiece(c, PT_KING, false);
+  for (int s = 0; s < N_SQ; ++s)
+    if (p.board[s] == want) return s;
+  return -1;
+}
+
+// Heuristic policy prior (un-normalised, positive) for move `m` in `p`.
+// Captures and promotions are favoured; a king stepping off its home two
+// ranks is heavily penalised - the search-level brake on the king-walk.
+double movePrior(const Position& p, const Move& m, int enemyKing) {
+  Color me = p.stm();
+  double pr = 1.0;
+  if (!m.isDrop()) {
+    Piece mover  = p.board[m.from];
+    Piece victim = p.board[m.to];
+    if (victim) pr += pieceVal(victim) / 80.0;          // MVV: favour big victims
+    if (m.promo)
+      pr += (typeOf(mover) == PT_ROOK || typeOf(mover) == PT_BISHOP) ? 2.5 : 1.2;
+    if (typeOf(mover) == PT_KING) {
+      int row = rowOf(m.to);
+      bool home = (me == BLACK) ? (row >= 7) : (row <= 1);
+      if (!home) pr *= 0.05;                            // king-walk brake
+    }
+  } else {
+    pr = 0.7;                                           // drops: modest default
+    if (enemyKing >= 0) {
+      int cheb = std::max(std::abs(rowOf(m.to) - rowOf(enemyKing)),
+                          std::abs(colOf(m.to) - colOf(enemyKing)));
+      if (cheb <= 2) pr += 1.5;                         // drop near enemy king
+    }
+  }
+  return pr < 0.02 ? 0.02 : pr;
+}
 }  // namespace
 
 MCTS::~MCTS() { freeTree(root_); }
@@ -27,7 +77,9 @@ void MCTS::setRoot(const Position& p) {
   nodeCount_ = 1;
 }
 
-// Expand: discover the legal moves from `n`, or flag it terminal.
+// Expand: discover the legal moves from `n`, or flag it terminal.  Moves are
+// stored sorted ascending by policy prior, so iterate() pops the most
+// promising candidate from the back of `untried`.
 void MCTS::expand(Node* n) {
   std::vector<Move> moves;
   generateLegalMoves(n->pos, moves);
@@ -36,25 +88,42 @@ void MCTS::expand(Node* n) {
     // Side to move has no legal reply -> that side loses.
     n->terminal = true;
     n->terminalBlack = (n->pos.stm() == BLACK) ? 0.0 : 1.0;
-  } else {
-    n->untried = std::move(moves);
+    return;
+  }
+  size_t m = moves.size();
+  int enemyKing = findKing(n->pos, opp(n->pos.stm()));
+  std::vector<double> pr(m);
+  double sum = 0.0;
+  for (size_t i = 0; i < m; ++i) {
+    pr[i] = movePrior(n->pos, moves[i], enemyKing);
+    sum += pr[i];
+  }
+  std::vector<size_t> idx(m);
+  for (size_t i = 0; i < m; ++i) idx[i] = i;
+  std::sort(idx.begin(), idx.end(),
+            [&](size_t a, size_t b) { return pr[a] < pr[b]; });
+  n->untried.resize(m);
+  n->untriedPriors.resize(m);
+  for (size_t i = 0; i < m; ++i) {
+    n->untried[i]       = moves[idx[i]];
+    n->untriedPriors[i] = float(pr[idx[i]] / sum);     // normalised to sum 1
   }
 }
 
-// UCT child selection from the perspective of the side to move at `n`.
+// PUCT child selection from the perspective of the side to move at `n`.
+// score = exploit + CPUCT * prior * sqrt(parentN) / (1 + childN)
 Node* MCTS::selectChild(Node* n) {
   const bool blackToMove = (n->pos.stm() == BLACK);
-  const double logParent = std::log(double(n->visits + n->virtualLoss + 1));
+  const double sqrtParent = std::sqrt(double(n->visits + n->virtualLoss + 1));
   Node* best = nullptr;
   double bestScore = -1e18;
   for (Node* c : n->children) {
     int vis = c->visits + c->virtualLoss;
-    if (vis == 0) return c;                       // never-tried child first
     // Each pending virtual loss counts as a loss for the side choosing here.
     double vb = c->valueBlack + (blackToMove ? 0.0 : double(c->virtualLoss));
-    double meanBlack = vb / vis;
+    double meanBlack = (vis > 0) ? vb / vis : 0.5;       // FPU: optimistic 0.5
     double exploit = blackToMove ? meanBlack : (1.0 - meanBlack);
-    double explore = EXPLORATION * std::sqrt(logParent / double(vis));
+    double explore = CPUCT * c->prior * sqrtParent / (1.0 + vis);
     double score = exploit + explore;
     if (score > bestScore) { bestScore = score; best = c; }
   }
@@ -83,10 +152,13 @@ void MCTS::iterate(uint64_t& rng) {
       if (!n->terminal && !n->untried.empty() && nodeCount_ < MAX_NODES) {
         Move mv = n->untried.back();
         n->untried.pop_back();
+        float pri = n->untriedPriors.back();
+        n->untriedPriors.pop_back();
         Node* child = new Node();
         ++nodeCount_;
         child->parent = n;
         child->move = mv;
+        child->prior = pri;
         child->pos = n->pos;
         doMove(child->pos, mv);
         n->children.push_back(child);
