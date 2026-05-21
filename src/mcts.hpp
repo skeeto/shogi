@@ -53,6 +53,8 @@ class MCTS {
   Stats snapshot();
   int   rootVisits();
 
+  double cpuct = 3.0;               // PUCT exploration constant (tunable)
+
  private:
   Node* selectChild(Node* n);
   void  expand(Node* n);

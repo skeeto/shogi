@@ -14,7 +14,7 @@ namespace shogi {
 
 class Engine {
  public:
-  explicit Engine(int threads = 0);     // 0 -> auto-detect
+  explicit Engine(int threads = 0, double cpuct = 3.0);  // 0 -> auto-detect
   ~Engine();
 
   // Switches the search to position `p` (stops, resets the tree, restarts).

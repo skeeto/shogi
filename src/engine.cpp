@@ -16,10 +16,11 @@ uint64_t mixSeed(uint64_t z) {
 }
 }  // namespace
 
-Engine::Engine(int threads) {
+Engine::Engine(int threads, double cpuct) {
   int hw = int(std::thread::hardware_concurrency());
   if (hw <= 0) hw = 2;
   nThreads_ = (threads > 0) ? threads : std::max(1, hw - 1);
+  mcts_.cpuct = cpuct;
 }
 
 Engine::~Engine() { stop(); }

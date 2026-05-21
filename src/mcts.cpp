@@ -8,7 +8,6 @@
 namespace shogi {
 
 namespace {
-constexpr double CPUCT     = 3.0;         // PUCT exploration constant
 constexpr size_t MAX_NODES = 700000;      // tree-size ceiling
 
 // Material value used only for capture-ordering in the policy prior.
@@ -153,7 +152,7 @@ Node* MCTS::selectChild(Node* n) {
     double vb = c->valueBlack + (blackToMove ? 0.0 : double(c->virtualLoss));
     double meanBlack = (vis > 0) ? vb / vis : 0.5;       // FPU: optimistic 0.5
     double exploit = blackToMove ? meanBlack : (1.0 - meanBlack);
-    double explore = CPUCT * c->prior * sqrtParent / (1.0 + vis);
+    double explore = cpuct * c->prior * sqrtParent / (1.0 + vis);
     double score = exploit + explore;
     if (score > bestScore) { bestScore = score; best = c; }
   }
