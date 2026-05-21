@@ -1,5 +1,5 @@
 // board.cpp - Shogi rules implementation.
-#include "board.h"
+#include "board.hpp"
 #include <cmath>
 #include <random>
 #include <string>

@@ -1,7 +1,7 @@
 // perft.cpp - move-generation correctness check + a quick MCTS smoke test.
 #include <cstdio>
-#include "board.h"
-#include "engine.h"
+#include "board.hpp"
+#include "engine.hpp"
 #include <chrono>
 #include <thread>
 

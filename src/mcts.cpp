@@ -1,5 +1,5 @@
 // mcts.cpp - Incremental MCTS implementation.
-#include "mcts.h"
+#include "mcts.hpp"
 #include <algorithm>
 #include <cmath>
 #include <random>

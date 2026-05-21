@@ -4,7 +4,7 @@
 // and back-propagation run under one mutex; the (much longer) random rollout
 // runs lock-free.  Virtual loss steers concurrent threads onto distinct paths.
 #pragma once
-#include "board.h"
+#include "board.hpp"
 #include <mutex>
 #include <vector>
 

@@ -5,7 +5,7 @@
 // a human is thinking - which is what feeds the move suggestions and the
 // position-strength bar.
 #pragma once
-#include "mcts.h"
+#include "mcts.hpp"
 #include <atomic>
 #include <thread>
 #include <vector>

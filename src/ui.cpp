@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "board.h"
-#include "engine.h"
-#include "font.h"
-#include "ui.h"
+#include "board.hpp"
+#include "engine.hpp"
+#include "font.hpp"
+#include "ui.hpp"
 
 namespace shogi {
 namespace {
@@ -57,7 +57,11 @@ void outlineRect(SDL_Renderer* r, float x, float y, float w, float h, RGBA c) {
   SDL_FRect q{x, y, w, h};
   SDL_RenderRect(r, &q);
 }
-int textW(const std::string& s, int sc) { return int(s.size()) * 6 * sc; }
+// Visible width of a string: glyphs are 5 px wide on a 6 px advance, so the
+// last glyph contributes no trailing column.
+int textW(const std::string& s, int sc) {
+  return s.empty() ? 0 : (int(s.size()) * 6 - 1) * sc;
+}
 
 void drawText(SDL_Renderer* r, int x, int y, int sc, const std::string& s,
               RGBA c) {
@@ -145,10 +149,14 @@ void drawPiece(SDL_Renderer* r, float x, float y, float w, float h, Piece pc,
   bool promo = isPromoted(pc);
   RGBA col = promo ? RGBA{176, 36, 24, 255} : RGBA{38, 26, 12, 255};
   int sc = std::max(2, int(w / 13));
-  drawTextC(r, int(cx), int(y + h * 0.5f - 4 * sc), sc,
+  // Centre the glyph on the tile's optical centre.  A glyph is 5x7 px; its
+  // mid-point is 2.5*sc across and 3.5*sc down from the top-left.  The
+  // pentagon's mass sits toward its wide end, so nudge the label that way.
+  float labelCY = y + h * (up ? 0.55f : 0.45f);
+  drawTextC(r, int(cx), int(labelCY - 3.5f * sc), sc,
             std::string(1, letterOf(pc)), col);
   if (promo)
-    drawTextC(r, int(cx), int(y + h * (up ? 0.14f : 0.66f)),
+    drawTextC(r, int(cx), int(y + h * (up ? 0.15f : 0.62f)),
               std::max(1, sc - 1), "+", col);
 }
 

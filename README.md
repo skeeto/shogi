@@ -53,12 +53,12 @@ cmake --build build -j
 
 | File | Responsibility |
 |------|----------------|
-| `board.{h,cpp}` | State representation, move generation, rules, evaluation |
-| `mcts.{h,cpp}`  | Thread-safe incremental MCTS over a shared tree |
-| `engine.{h,cpp}`| Worker-thread pool driving the search |
-| `ui.{h,cpp}`    | SDL3 rendering, input and game flow |
-| `font.h`        | Embedded 5x7 bitmap font |
-| `main.cpp`      | Entry point |
+| `board.{hpp,cpp}` | State representation, move generation, rules, evaluation |
+| `mcts.{hpp,cpp}`  | Thread-safe incremental MCTS over a shared tree |
+| `engine.{hpp,cpp}`| Worker-thread pool driving the search |
+| `ui.{hpp,cpp}`    | SDL3 rendering, input and game flow |
+| `font.hpp`        | Embedded 5x7 bitmap font |
+| `main.cpp`        | Entry point |
 
 ## Notes / limitations
 
