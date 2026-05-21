@@ -468,7 +468,7 @@ void App::onClick(float mx, float my) {
 
 // --- Rendering --------------------------------------------------------------
 void App::renderMenu() {
-  drawTextC(ren_, WIN_W / 2, 86, 64, "SHOGI", C_TEXT);
+  drawTextC(ren_, WIN_W / 2, 100, 46, "SHOGI", C_TEXT);
   drawTextC(ren_, WIN_W / 2, 188, 17,
             "MULTITHREADED MONTE CARLO TREE SEARCH", C_DIM);
   float mx, my;
@@ -665,23 +665,36 @@ int App::run() {
     SDL_Log("SDL_Init failed: %s", SDL_GetError());
     return 1;
   }
-  win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H, 0);
+  win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H,
+                          SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!win_) {
     SDL_Log("CreateWindow failed: %s", SDL_GetError());
     return 1;
   }
 #ifdef __EMSCRIPTEN__
   // SDL3's Emscripten backend sizes the window from the canvas's CSS box,
-  // which may not be laid out yet at startup - pin the canvas and window to
-  // the intended size before the renderer (and its backbuffer) are created.
-  emscripten_set_canvas_element_size("#canvas", WIN_W, WIN_H);
+  // which may not be laid out yet at startup - pin the canvas before the
+  // renderer is created.  The backing store is scaled by the device pixel
+  // ratio so the picture is sharp on high-DPI screens, not browser-upscaled.
+  double dpr = emscripten_get_device_pixel_ratio();
+  if (dpr < 1.0) dpr = 1.0;
   SDL_SetWindowSize(win_, WIN_W, WIN_H);
+  emscripten_set_canvas_element_size("#canvas", int(WIN_W * dpr + 0.5),
+                                     int(WIN_H * dpr + 0.5));
 #endif
   ren_ = SDL_CreateRenderer(win_, nullptr);
   if (!ren_) {
     SDL_Log("CreateRenderer failed: %s", SDL_GetError());
     return 1;
   }
+  // Draw in WIN_W x WIN_H logical coordinates but render at the display's
+  // true pixel density - the fix for soft, DPI-upscaled output.
+#ifdef __EMSCRIPTEN__
+  float density = float(dpr);
+#else
+  float density = SDL_GetWindowPixelDensity(win_);
+#endif
+  if (density > 1.0f) SDL_SetRenderScale(ren_, density, density);
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
   buildGlyphs(ren_);                     // upload the embedded font atlas
