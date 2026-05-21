@@ -44,7 +44,8 @@ static const D GOLD_STEPS[]   = {{-1,-1},{-1,0},{-1,1},{0,-1},{0,1},{1,0}};
 static const D SILVER_STEPS[] = {{-1,-1},{-1,0},{-1,1},{1,-1},{1,1}};
 static const D KING_STEPS[]   = {{-1,-1},{-1,0},{-1,1},{0,-1},{0,1},{1,-1},{1,0},{1,1}};
 static const D PAWN_STEPS[]   = {{-1,0}};
-static const D KNIGHT_STEPS[] = {{-2,-1},{-2,1}};
+// (The knight has no step table: as the only jumping piece it is handled
+// inline in genPseudo and isAttacked, and pieceSteps has no knight case.)
 static const D ORTHO[]        = {{-1,0},{1,0},{0,-1},{0,1}};
 static const D DIAG[]         = {{-1,-1},{-1,1},{1,-1},{1,1}};
 static const D LANCE_RAY[]    = {{-1,0}};
