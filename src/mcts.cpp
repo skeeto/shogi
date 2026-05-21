@@ -69,6 +69,36 @@ void MCTS::freeTree(Node* n) {
   delete n;
 }
 
+static size_t countNodes(const Node* n) {
+  size_t c = 1;
+  for (const Node* k : n->children) c += countNodes(k);
+  return c;
+}
+
+void MCTS::advance(const Move& m, const Position& newPos) {
+  std::lock_guard<std::mutex> lk(mtx_);
+  Node* keep = nullptr;
+  if (root_)
+    for (Node* c : root_->children)
+      if (c->move == m) { keep = c; break; }
+
+  if (keep) {
+    // Detach the subtree for `m`; free the old root and the other branches.
+    for (Node* c : root_->children)
+      if (c != keep) freeTree(c);
+    root_->children.clear();
+    delete root_;
+    keep->parent = nullptr;
+    root_ = keep;
+    nodeCount_ = countNodes(root_);
+  } else {
+    freeTree(root_);
+    root_ = new Node();
+    root_->pos = newPos;
+    nodeCount_ = 1;
+  }
+}
+
 void MCTS::setRoot(const Position& p) {
   std::lock_guard<std::mutex> lk(mtx_);
   freeTree(root_);

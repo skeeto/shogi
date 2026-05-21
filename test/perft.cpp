@@ -42,11 +42,22 @@ int main() {
   eng.setPosition(p);
   std::this_thread::sleep_for(std::chrono::seconds(1));
   auto st = eng.stats();
-  eng.stop();
   std::printf("after 1s: %d playouts, best=%s blackWinProb=%.3f\n",
               st.rootVisits, moveToString(st.bestMove).c_str(),
               st.blackWinProb);
   if (st.rootVisits < 100) { std::printf("FAIL: too few playouts\n"); rc = 1; }
+
+  // Tree-reuse smoke test: advancing by the best move must keep its subtree.
+  Position p2 = p;
+  doMove(p2, st.bestMove);
+  eng.advance(st.bestMove, p2);
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  auto st2 = eng.stats();
+  eng.stop();
+  std::printf("after advance(%s): %d playouts, best=%s\n",
+              moveToString(st.bestMove).c_str(), st2.rootVisits,
+              moveToString(st2.bestMove).c_str());
+  if (st2.rootVisits < 50) { std::printf("FAIL: advance lost the tree\n"); rc = 1; }
   std::printf(rc ? "\nTESTS FAILED\n" : "\nALL TESTS PASSED\n");
   return rc;
 }

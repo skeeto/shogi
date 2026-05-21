@@ -34,6 +34,11 @@ class MCTS {
   // Resets the tree to start searching from `p`.
   void setRoot(const Position& p);
 
+  // Advances the root by `m`, reusing the matching child's subtree if it
+  // exists (so search done while pondering is not thrown away); otherwise
+  // starts fresh from `newPos`.
+  void advance(const Move& m, const Position& newPos);
+
   // Runs exactly one MCTS iteration.  Safe to call from many threads.  The
   // leaf is now scored by a deterministic quiescence eval, so `rng` is no
   // longer used; it is kept to avoid churning the Engine worker loop.

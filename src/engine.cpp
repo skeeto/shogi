@@ -51,4 +51,10 @@ void Engine::setPosition(const Position& p) {
   startWorkers();
 }
 
+void Engine::advance(const Move& m, const Position& p) {
+  stop();
+  mcts_.advance(m, p);
+  startWorkers();
+}
+
 }  // namespace shogi

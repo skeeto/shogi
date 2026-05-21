@@ -268,7 +268,7 @@ void App::applyMove(const Move& m) {
   recomputeLegal();
   updateResult();
   if (result_ == ONGOING)
-    engine_.setPosition(pos_);
+    engine_.advance(m, pos_);     // reuse the subtree pondered for this move
   else
     engine_.stop();
 }

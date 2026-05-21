@@ -20,6 +20,10 @@ class Engine {
   // Switches the search to position `p` (stops, resets the tree, restarts).
   void setPosition(const Position& p);
 
+  // Advances the search by move `m` to position `p`, reusing the pondered
+  // subtree for `m` when possible.
+  void advance(const Move& m, const Position& p);
+
   // Stops all worker threads.
   void stop();
 
