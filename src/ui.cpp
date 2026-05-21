@@ -15,7 +15,7 @@
 
 #include "board.hpp"
 #include "engine.hpp"
-#include "font.hpp"
+#include "glyphs.hpp"
 #include "ui.hpp"
 
 namespace shogi {
@@ -62,30 +62,64 @@ void outlineRect(SDL_Renderer* r, float x, float y, float w, float h, RGBA c) {
   SDL_FRect q{x, y, w, h};
   SDL_RenderRect(r, &q);
 }
-// Visible width of a string: glyphs are 5 px wide on a 6 px advance, so the
-// last glyph contributes no trailing column.
-int textW(const std::string& s, int sc) {
-  return s.empty() ? 0 : (int(s.size()) * 6 - 1) * sc;
+// --- Text: anti-aliased glyph textures built once from glyphs.hpp -----------
+SDL_Texture* g_ascii[95] = {};
+SDL_Texture* g_kanji[15] = {};
+
+// Build a white texture whose alpha channel is the glyph's coverage, so it can
+// be tinted to any colour with SDL_SetTextureColorMod.
+SDL_Texture* makeGlyphTex(SDL_Renderer* r, const GlyphInfo& g) {
+  if (g.w <= 0 || g.h <= 0) return nullptr;          // e.g. the space glyph
+  SDL_Texture* t = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32,
+                                     SDL_TEXTUREACCESS_STATIC, g.w, g.h);
+  if (!t) return nullptr;
+  std::vector<uint8_t> px(size_t(g.w) * g.h * 4);
+  for (int i = 0; i < g.w * g.h; ++i) {
+    px[i * 4 + 0] = 255;
+    px[i * 4 + 1] = 255;
+    px[i * 4 + 2] = 255;
+    px[i * 4 + 3] = GLYPH_PIX[g.pix + i];            // coverage -> alpha
+  }
+  SDL_UpdateTexture(t, nullptr, px.data(), g.w * 4);
+  SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+  SDL_SetTextureScaleMode(t, SDL_SCALEMODE_LINEAR);
+  return t;
+}
+void buildGlyphs(SDL_Renderer* r) {
+  for (int i = 0; i < 95; ++i) g_ascii[i] = makeGlyphTex(r, ASCII_GLYPHS[i]);
+  for (int i = 0; i < 15; ++i) g_kanji[i] = makeGlyphTex(r, KANJI_GLYPHS[i]);
 }
 
-void drawText(SDL_Renderer* r, int x, int y, int sc, const std::string& s,
-              RGBA c) {
-  setColor(r, c);
+// Width of `s` rendered at pixel height `px`.
+int textW(const std::string& s, int px) {
+  float k = float(px) / ASCII_PX, w = 0;
   for (char ch : s) {
-    const uint8_t* g = fontGlyph(ch);
-    for (int row = 0; row < 8; ++row)
-      for (int col = 0; col < 5; ++col)
-        if (g[row] & (1 << col)) {
-          SDL_FRect q{float(x + col * sc), float(y + row * sc),
-                      float(sc), float(sc)};
-          SDL_RenderFillRect(r, &q);
-        }
-    x += 6 * sc;
+    int i = (ch >= 0x20 && ch <= 0x7E) ? ch - 0x20 : ('?' - 0x20);
+    w += ASCII_GLYPHS[i].advance * k;
+  }
+  return int(w + 0.5f);
+}
+
+// Draw `s` with the top-left of its line box at (x, y), glyphs `px` px tall.
+void drawText(SDL_Renderer* r, int x, int y, int px, const std::string& s,
+              RGBA c) {
+  float k = float(px) / ASCII_PX;
+  float pen = float(x), baseline = y + ASCII_ASCENT * k;
+  for (char ch : s) {
+    int i = (ch >= 0x20 && ch <= 0x7E) ? ch - 0x20 : ('?' - 0x20);
+    const GlyphInfo& g = ASCII_GLYPHS[i];
+    if (g_ascii[i]) {
+      SDL_SetTextureColorMod(g_ascii[i], c.r, c.g, c.b);
+      SDL_SetTextureAlphaMod(g_ascii[i], c.a);
+      SDL_FRect dst{pen + g.xoff * k, baseline + g.yoff * k, g.w * k, g.h * k};
+      SDL_RenderTexture(r, g_ascii[i], nullptr, &dst);
+    }
+    pen += g.advance * k;
   }
 }
-void drawTextC(SDL_Renderer* r, int cx, int y, int sc, const std::string& s,
+void drawTextC(SDL_Renderer* r, int cx, int y, int px, const std::string& s,
                RGBA c) {
-  drawText(r, cx - textW(s, sc) / 2, y, sc, s, c);
+  drawText(r, cx - textW(s, px) / 2, y, px, s, c);
 }
 
 void fillPoly(SDL_Renderer* r, const SDL_FPoint* pts, int n, RGBA c) {
@@ -113,17 +147,30 @@ void fillDisc(SDL_Renderer* r, float cx, float cy, float rad, RGBA c) {
   fillPoly(r, p, 16, c);
 }
 
-char letterOf(Piece pc) {
-  switch (typeOf(pc)) {
-    case PT_PAWN:   return 'P';
-    case PT_LANCE:  return 'L';
-    case PT_KNIGHT: return 'N';
-    case PT_SILVER: return 'S';
-    case PT_GOLD:   return 'G';
-    case PT_BISHOP: return 'B';
-    case PT_ROOK:   return 'R';
-    case PT_KING:   return 'K';
-    default:        return '?';
+// Index into KANJI_GLYPHS for a piece (see tools/genfont.cpp for the order).
+int kanjiIndex(Piece pc) {
+  PieceType t = typeOf(pc);
+  if (isPromoted(pc)) {
+    switch (t) {
+      case PT_PAWN:   return 9;    // と
+      case PT_LANCE:  return 10;   // 杏
+      case PT_KNIGHT: return 11;   // 圭
+      case PT_SILVER: return 12;   // 全
+      case PT_BISHOP: return 13;   // 馬
+      case PT_ROOK:   return 14;   // 龍
+      default:        return 4;
+    }
+  }
+  switch (t) {
+    case PT_PAWN:   return 0;      // 歩
+    case PT_LANCE:  return 1;      // 香
+    case PT_KNIGHT: return 2;      // 桂
+    case PT_SILVER: return 3;      // 銀
+    case PT_GOLD:   return 4;      // 金
+    case PT_BISHOP: return 5;      // 角
+    case PT_ROOK:   return 6;      // 飛
+    case PT_KING:   return colorOf(pc) == BLACK ? 7 : 8;   // 王 / 玉
+    default:        return 0;
   }
 }
 
@@ -151,18 +198,24 @@ void drawPiece(SDL_Renderer* r, float x, float y, float w, float h, Piece pc,
   for (int i = 0; i < 5; ++i)
     SDL_RenderLine(r, pts[i].x, pts[i].y, pts[(i + 1) % 5].x, pts[(i + 1) % 5].y);
 
-  bool promo = isPromoted(pc);
-  RGBA col = promo ? RGBA{176, 36, 24, 255} : RGBA{38, 26, 12, 255};
-  int sc = std::max(2, int(w / 13));
-  // Centre the glyph on the tile's optical centre.  A glyph is 5x7 px; its
-  // mid-point is 2.5*sc across and 3.5*sc down from the top-left.  The
-  // pentagon's mass sits toward its wide end, so nudge the label that way.
-  float labelCY = y + h * (up ? 0.55f : 0.45f);
-  drawTextC(r, int(cx), int(labelCY - 3.5f * sc), sc,
-            std::string(1, letterOf(pc)), col);
-  if (promo)
-    drawTextC(r, int(cx), int(y + h * (up ? 0.15f : 0.62f)),
-              std::max(1, sc - 1), "+", col);
+  // Kanji glyph, in red when promoted.  White's pieces face the other way, so
+  // the glyph is rotated 180 degrees - just like a real shogi board.
+  RGBA col = isPromoted(pc) ? RGBA{176, 36, 24, 255} : RGBA{38, 26, 12, 255};
+  int ki = kanjiIndex(pc);
+  if (g_kanji[ki]) {
+    const GlyphInfo& g = KANJI_GLYPHS[ki];
+    float gh = h * 0.60f;                          // kanji ~60% of tile height
+    float gw = g.w * (gh / g.h);
+    float gcx = cx, gcy = y + h * (up ? 0.55f : 0.45f);  // toward the wide end
+    SDL_FRect dst{gcx - gw / 2, gcy - gh / 2, gw, gh};
+    SDL_SetTextureColorMod(g_kanji[ki], col.r, col.g, col.b);
+    SDL_SetTextureAlphaMod(g_kanji[ki], 255);
+    if (up)
+      SDL_RenderTexture(r, g_kanji[ki], nullptr, &dst);
+    else
+      SDL_RenderTextureRotated(r, g_kanji[ki], nullptr, &dst, 180.0, nullptr,
+                               SDL_FLIP_NONE);
+  }
 }
 
 // --- Buttons ----------------------------------------------------------------
@@ -178,9 +231,9 @@ void drawButton(SDL_Renderer* r, const Button& b, bool highlight) {
   fillRect(r, b.rect.x, b.rect.y, b.rect.w, b.rect.h,
            highlight ? C_BTN_HOT : C_BTN);
   outlineRect(r, b.rect.x, b.rect.y, b.rect.w, b.rect.h, RGBA{20, 22, 28, 255});
-  int sc = 3;
+  int px = 24;
   drawTextC(r, int(b.rect.x + b.rect.w / 2),
-            int(b.rect.y + b.rect.h / 2 - 4 * sc), sc, b.label, C_TEXT);
+            int(b.rect.y + b.rect.h / 2 - px * 0.43f), px, b.label, C_TEXT);
 }
 
 // ---------------------------------------------------------------------------
@@ -415,16 +468,16 @@ void App::onClick(float mx, float my) {
 
 // --- Rendering --------------------------------------------------------------
 void App::renderMenu() {
-  drawTextC(ren_, WIN_W / 2, 96, 9, "SHOGI", C_TEXT);
-  drawTextC(ren_, WIN_W / 2, 188, 2,
+  drawTextC(ren_, WIN_W / 2, 86, 64, "SHOGI", C_TEXT);
+  drawTextC(ren_, WIN_W / 2, 188, 17,
             "MULTITHREADED MONTE CARLO TREE SEARCH", C_DIM);
   float mx, my;
   SDL_GetMouseState(&mx, &my);
   for (const Button& b : menuButtons_)
     drawButton(ren_, b, b.hit(mx, my));
-  drawTextC(ren_, WIN_W / 2, 624, 2,
+  drawTextC(ren_, WIN_W / 2, 624, 17,
             "ENGINE THREADS  " + std::to_string(engine_.threadCount()), C_DIM);
-  drawTextC(ren_, WIN_W / 2, 660, 2, "CLICK A MODE TO BEGIN", C_DIM);
+  drawTextC(ren_, WIN_W / 2, 660, 17, "CLICK A MODE TO BEGIN", C_DIM);
 }
 
 void App::renderBoard() {
@@ -502,7 +555,7 @@ void App::renderHands() {
   for (int c = 0; c < 2; ++c) {
     Color col = Color(c);
     int x = (col == WHITE) ? WHITE_HAND_X : BLACK_HAND_X;
-    drawTextC(ren_, x + HAND_W / 2, BOARD_Y - 28, 2,
+    drawTextC(ren_, x + HAND_W / 2, BOARD_Y - 30, 17,
               names[c == BLACK ? 0 : 1], C_DIM);
     for (int i = 0; i < 7; ++i) {
       PieceType t = PieceType(PT_PAWN + i);
@@ -514,7 +567,7 @@ void App::renderHands() {
       drawPiece(ren_, rc.x + 6, rc.y + 2, 56, 56, pc, false);
       int n = pos_.hand[c][t];
       RGBA tc = n ? C_TEXT : C_DIM;
-      drawText(ren_, int(rc.x) + 78, int(rc.y) + 18, 4,
+      drawText(ren_, int(rc.x) + 78, int(rc.y) + 12, 30,
                "x" + std::to_string(n), tc);
     }
   }
@@ -530,9 +583,9 @@ void App::renderBars(const MCTS::Stats& st) {
     int h = int(BOARD_PX * std::clamp(b.frac, 0.0, 1.0));
     fillRect(ren_, b.x, BOARD_Y + BOARD_PX - h, BAR_W, h, b.col);
     outlineRect(ren_, b.x, BOARD_Y, BAR_W, BOARD_PX, RGBA{20, 22, 28, 255});
-    drawTextC(ren_, b.x + BAR_W / 2, BOARD_Y - 22, 2, b.tag, C_DIM);
+    drawTextC(ren_, b.x + BAR_W / 2, BOARD_Y - 24, 16, b.tag, C_DIM);
     int pct = int(b.frac * 100.0 + 0.5);
-    drawTextC(ren_, b.x + BAR_W / 2, BOARD_Y + BOARD_PX + 8, 2,
+    drawTextC(ren_, b.x + BAR_W / 2, BOARD_Y + BOARD_PX + 6, 16,
               std::to_string(pct), C_DIM);
   }
 }
@@ -554,11 +607,11 @@ void App::renderStatus(const MCTS::Stats& st) {
     line = (result_ == BLACK_WIN ? "BLACK WINS" : "WHITE WINS");
     line += "  CHECKMATE";
   }
-  drawTextC(ren_, WIN_W / 2, 26, 4, line, col);
+  drawTextC(ren_, WIN_W / 2, 22, 30, line, col);
   std::string info = "PLAYOUTS " + std::to_string(st.rootVisits);
   if (!st.bestMove.isNull() && result_ == ONGOING)
     info += "    BEST " + moveToString(st.bestMove);
-  drawTextC(ren_, WIN_W / 2, 64, 2, info, C_DIM);
+  drawTextC(ren_, WIN_W / 2, 62, 17, info, C_DIM);
 }
 
 void App::renderPromoDialog() {
@@ -566,7 +619,7 @@ void App::renderPromoDialog() {
   float bx = WIN_W / 2 - 190, by = WIN_H / 2 - 80;
   fillRect(ren_, bx, by, 380, 160, C_PANEL);
   outlineRect(ren_, bx, by, 380, 160, C_TEXT);
-  drawTextC(ren_, WIN_W / 2, int(by) + 24, 3, "PROMOTE PIECE?", C_TEXT);
+  drawTextC(ren_, WIN_W / 2, int(by) + 28, 26, "PROMOTE PIECE?", C_TEXT);
   promoYes_ = Button{{bx + 30, by + 84, 150, 48}, "YES"};
   promoNo_ = Button{{bx + 200, by + 84, 150, 48}, "NO"};
   float mx, my;
@@ -580,7 +633,7 @@ void App::renderResult() {
   std::string t = (result_ == DRAW)
                       ? "DRAW BY REPETITION"
                       : (result_ == BLACK_WIN ? "BLACK WINS" : "WHITE WINS");
-  drawTextC(ren_, WIN_W / 2, WIN_H / 2 - 16, 5, t, C_SUGGEST);
+  drawTextC(ren_, WIN_W / 2, WIN_H / 2 - 22, 40, t, C_SUGGEST);
 }
 
 void App::render() {
@@ -631,6 +684,7 @@ int App::run() {
   }
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+  buildGlyphs(ren_);                     // upload the embedded font atlas
 
   initZobrist();
 

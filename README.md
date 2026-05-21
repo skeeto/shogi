@@ -23,8 +23,11 @@ multi-threaded, incremental Monte-Carlo Tree Search (MCTS) AI.
 - **Full Shogi rules** — drops, promotion (optional and forced), two-pawn
   (*nifu*) and drop-mate (*uchifuzume*) restrictions, checkmate detection, and
   fourfold-repetition (*sennichite*) draws.
-- **Multi-platform** — SDL3 for window, rendering and input; an embedded
-  bitmap font means no asset files are needed at runtime.
+- **Traditional kanji pieces** — pieces show their Japanese kanji (歩 香 桂 銀
+  金 角 飛 王/玉, and と 杏 圭 全 馬 龍 promoted), rotated for the facing side.
+  The kanji and a Mincho UI font are an embedded anti-aliased glyph atlas, so
+  no asset files are needed at runtime.
+- **Multi-platform** — SDL3 for window, rendering and input.
 
 ## Building
 
@@ -75,7 +78,7 @@ GitHub Pages included — just publish the contents of `build-web/`.
 | `mcts.{hpp,cpp}`  | Thread-safe incremental MCTS over a shared tree |
 | `engine.{hpp,cpp}`| Worker-thread pool driving the search |
 | `ui.{hpp,cpp}`    | SDL3 rendering, input and game flow |
-| `font.hpp`        | Embedded 5x7 bitmap font |
+| `glyphs.hpp`      | Embedded glyph atlas — ASCII + kanji (generated) |
 | `main.cpp`        | Entry point |
 
 ## Notes / limitations
