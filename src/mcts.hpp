@@ -32,8 +32,9 @@ class MCTS {
   // Resets the tree to start searching from `p`.
   void setRoot(const Position& p);
 
-  // Runs exactly one MCTS iteration.  Safe to call from many threads.
-  void iterate();
+  // Runs exactly one MCTS iteration.  Safe to call from many threads; each
+  // caller passes (and owns) its own RNG state used for the random rollout.
+  void iterate(uint64_t& rng);
 
   struct Stats {
     Move   bestMove     = nullMove();
@@ -47,7 +48,7 @@ class MCTS {
  private:
   Node* selectChild(Node* n);
   void  expand(Node* n);
-  double rollout(const Position& start);
+  double rollout(const Position& start, uint64_t& rng);
   void  freeTree(Node* n);
 
   std::mutex mtx_;
