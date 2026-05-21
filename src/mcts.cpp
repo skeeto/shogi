@@ -8,7 +8,11 @@
 namespace shogi {
 
 namespace {
+#ifdef __EMSCRIPTEN__
+constexpr size_t MAX_NODES = 300000;      // smaller ceiling for the wasm heap
+#else
 constexpr size_t MAX_NODES = 700000;      // tree-size ceiling
+#endif
 
 // Material value used only for capture-ordering in the policy prior.
 int pieceVal(Piece q) {

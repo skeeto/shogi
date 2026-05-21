@@ -3,6 +3,10 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -208,6 +212,11 @@ class App {
   void renderPromoDialog();
   void renderResult();
 
+  void frameStep();                    // one main-loop iteration
+#ifdef __EMSCRIPTEN__
+  static void frameThunk(void* self);  // emscripten main-loop trampoline
+#endif
+
   int squareAt(float mx, float my) const;       // -1 if outside board
   SDL_FRect handEntry(Color c, int idx) const;
 
@@ -217,6 +226,7 @@ class App {
 
   Screen screen_ = SCR_MENU;
   Mode mode_ = MODE_HVC;
+  bool running_ = true;
   bool human_[2] = {true, true};
 
   Position pos_;
@@ -627,51 +637,68 @@ int App::run() {
   suggestBtn_ = Button{{float(BOARD_X + BOARD_PX - 240), 636, 240, 46},
                        "SUGGEST  ON"};
 
-  bool running = true;
-  while (running) {
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-      if (e.type == SDL_EVENT_QUIT) {
-        running = false;
-      } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-                 e.button.button == SDL_BUTTON_LEFT) {
-        onClick(e.button.x, e.button.y);
-      } else if (e.type == SDL_EVENT_KEY_DOWN) {
-        if (e.key.key == SDLK_ESCAPE) {
-          if (screen_ == SCR_PLAY) {
-            engine_.stop();
-            screen_ = SCR_MENU;
-          } else {
-            running = false;
-          }
-        } else if (e.key.key == SDLK_S) {
-          showSuggest_ = !showSuggest_;
-        }
-      }
-    }
-
-    // Drive computer moves.
-    if (screen_ == SCR_PLAY && result_ == ONGOING && !promoDialog_ &&
-        playerIsComputer(pos_.stm())) {
-      if (!thinking_) {
-        thinking_ = true;
-        thinkStart_ = SDL_GetTicks();
-      } else if (SDL_GetTicks() - thinkStart_ >= THINK_MS) {
-        Move mv = engine_.stats().bestMove;
-        if (mv.isNull() && !legal_.empty()) mv = legal_[0];
-        if (!mv.isNull()) applyMove(mv);
-      }
-    }
-
-    render();
-    SDL_RenderPresent(ren_);
-  }
-
+#ifdef __EMSCRIPTEN__
+  // The browser owns the event loop; it calls frameStep once per animation
+  // frame.  simulate_infinite_loop = 1 means this call does not return.
+  emscripten_set_main_loop_arg(&App::frameThunk, this, 0, 1);
+  return 0;
+#else
+  while (running_) frameStep();
   engine_.stop();
   SDL_DestroyRenderer(ren_);
   SDL_DestroyWindow(win_);
   SDL_Quit();
   return 0;
+#endif
+}
+
+#ifdef __EMSCRIPTEN__
+void App::frameThunk(void* self) { static_cast<App*>(self)->frameStep(); }
+#endif
+
+// One iteration of the main loop: input, search progress, computer move,
+// render.  Driven by a plain while loop natively, by the browser on the web.
+void App::frameStep() {
+  SDL_Event e;
+  while (SDL_PollEvent(&e)) {
+    if (e.type == SDL_EVENT_QUIT) {
+      running_ = false;
+    } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+               e.button.button == SDL_BUTTON_LEFT) {
+      onClick(e.button.x, e.button.y);
+    } else if (e.type == SDL_EVENT_KEY_DOWN) {
+      if (e.key.key == SDLK_ESCAPE) {
+        if (screen_ == SCR_PLAY) {
+          engine_.stop();
+          screen_ = SCR_MENU;
+        } else {
+          running_ = false;
+        }
+      } else if (e.key.key == SDLK_S) {
+        showSuggest_ = !showSuggest_;
+      }
+    }
+  }
+
+  // Grow the search tree.  No-op on a threaded build (worker threads do the
+  // searching); on a single-threaded build this is the search.
+  if (screen_ == SCR_PLAY && result_ == ONGOING) engine_.pump(12);
+
+  // Drive computer moves.
+  if (screen_ == SCR_PLAY && result_ == ONGOING && !promoDialog_ &&
+      playerIsComputer(pos_.stm())) {
+    if (!thinking_) {
+      thinking_ = true;
+      thinkStart_ = SDL_GetTicks();
+    } else if (SDL_GetTicks() - thinkStart_ >= THINK_MS) {
+      Move mv = engine_.stats().bestMove;
+      if (mv.isNull() && !legal_.empty()) mv = legal_[0];
+      if (!mv.isNull()) applyMove(mv);
+    }
+  }
+
+  render();
+  SDL_RenderPresent(ren_);
 }
 
 }  // namespace

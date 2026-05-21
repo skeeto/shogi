@@ -1,12 +1,15 @@
-// engine.h - Background search manager.
+// engine.hpp - Background search manager.
 //
-// Owns the MCTS tree and a pool of worker threads that search continuously.
-// The search runs on whatever position is current, so it also "ponders" while
-// a human is thinking - which is what feeds the move suggestions and the
-// position-strength bar.
+// Owns the MCTS tree and the search workers.  On a normal (threaded) build a
+// pool of worker threads searches continuously - so the engine also "ponders"
+// while a human is thinking, which feeds move suggestions and the strength
+// bar.  On a single-threaded build (Emscripten/WebAssembly, where there is no
+// SharedArrayBuffer) there are no worker threads; the caller drives the search
+// by calling pump() each frame instead.
 #pragma once
 #include "mcts.hpp"
 #include <atomic>
+#include <cstdint>
 #include <thread>
 #include <vector>
 
@@ -17,15 +20,19 @@ class Engine {
   explicit Engine(int threads = 0, double cpuct = 2.0);  // 0 -> auto-detect
   ~Engine();
 
-  // Switches the search to position `p` (stops, resets the tree, restarts).
+  // Switches the search to position `p` (resets the tree).
   void setPosition(const Position& p);
 
   // Advances the search by move `m` to position `p`, reusing the pondered
   // subtree for `m` when possible.
   void advance(const Move& m, const Position& p);
 
-  // Stops all worker threads.
+  // Stops all worker threads (no-op on a single-threaded build).
   void stop();
+
+  // Single-threaded builds: run the search for about `ms` milliseconds on the
+  // calling thread.  No-op on a threaded build (the workers do the searching).
+  void pump(int ms);
 
   MCTS::Stats stats() { return mcts_.snapshot(); }
   int  visits()       { return mcts_.rootVisits(); }
@@ -37,6 +44,7 @@ class Engine {
   MCTS mcts_;
   std::vector<std::thread> workers_;
   std::atomic<bool> run_{false};
+  uint64_t rng_ = 0x9e3779b97f4a7c15ULL;   // search RNG for the pump() path
   int nThreads_;
 };
 
