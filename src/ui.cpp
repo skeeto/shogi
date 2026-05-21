@@ -5,6 +5,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/html5.h>
 #endif
 
 #include <algorithm>
@@ -616,11 +617,25 @@ int App::run() {
     SDL_Log("CreateWindow failed: %s", SDL_GetError());
     return 1;
   }
+#ifdef __EMSCRIPTEN__
+  // SDL3's Emscripten backend sizes the window from the canvas's CSS box,
+  // which may not be laid out yet at startup - pin the canvas and window to
+  // the intended size before the renderer (and its backbuffer) are created.
+  emscripten_set_canvas_element_size("#canvas", WIN_W, WIN_H);
+  SDL_SetWindowSize(win_, WIN_W, WIN_H);
+#endif
   ren_ = SDL_CreateRenderer(win_, nullptr);
   if (!ren_) {
     SDL_Log("CreateRenderer failed: %s", SDL_GetError());
     return 1;
   }
+#ifdef __EMSCRIPTEN__
+  {
+    int ow = 0, oh = 0;
+    SDL_GetRenderOutputSize(ren_, &ow, &oh);
+    SDL_Log("shogi: render output %dx%d (want %dx%d)", ow, oh, WIN_W, WIN_H);
+  }
+#endif
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
 
