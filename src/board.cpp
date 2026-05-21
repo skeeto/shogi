@@ -323,19 +323,126 @@ static int promoValue(PieceType t) {
   }
 }
 
+// Game phase in [0,256]: 256 at the opening, 0 in a bare-king endgame.  King
+// safety terms scale by this, so the king is free to march in the endgame.
+static const int PHASE_MAX = 40;
+static int phaseWeight(PieceType t) {
+  switch (t) {
+    case PT_LANCE: case PT_KNIGHT: return 1;
+    case PT_SILVER: case PT_GOLD:  return 2;
+    case PT_BISHOP: case PT_ROOK:  return 4;
+    default:                       return 0;
+  }
+}
+static int gamePhase(const Position& p) {
+  int units = 0;
+  for (int s = 0; s < N_SQ; ++s)
+    if (p.board[s]) units += phaseWeight(typeOf(p.board[s]));
+  for (int c = 0; c < 2; ++c)
+    for (int t = PT_PAWN; t <= PT_ROOK; ++t)
+      units += p.hand[c][t] * phaseWeight(PieceType(t));
+  int ph = units * 256 / PHASE_MAX;
+  return ph > 256 ? 256 : ph;
+}
+
+// Piece-square value for a BLACK piece on square `s` (Black orientation: row 8
+// is Black's home rank).  A White piece reuses this with the 180-degree
+// mirrored square (80 - s) and a negated contribution.  The King table is
+// separate because it is scaled by game phase.
+static int pstKingBlack(int s) {
+  static const int byRow[9] = {-300, -260, -200, -140, -85, -45, 0, 20, 28};
+  int v = byRow[rowOf(s)];
+  int col = colOf(s);
+  if (rowOf(s) >= 6 && (col <= 1 || col >= 7)) v += 10;  // castled to a wing
+  return v;
+}
+static int pstBlack(PieceType t, int s) {
+  int row = rowOf(s), col = colOf(s);
+  int adv = 8 - row;                            // 0 at home .. 8 deep in camp
+  int centre = 4 - (col < 4 ? col : 8 - col);   // 0 edge file .. 4 centre file
+  switch (t) {
+    case PT_PAWN: {
+      static const int byRow[9] = {0, 8, 14, 12, 9, 5, 0, 0, 0};
+      return byRow[row];
+    }
+    case PT_LANCE:  return adv >= 5 ? 6 : 0;
+    case PT_KNIGHT: return (row == 5 || row == 6) ? 6 : (row >= 7 ? 0 : 2);
+    case PT_SILVER: return row >= 6 ? 6 : (row >= 3 ? 4 : 0);
+    case PT_GOLD: {
+      static const int byRow[9] = {-18, -16, -14, -12, -8, -4, 4, 12, 8};
+      return byRow[row];
+    }
+    case PT_BISHOP: return centre + adv / 3;
+    case PT_ROOK:   return centre / 2 + (adv >= 4 ? 6 : 2);
+    default:        return 0;
+  }
+}
+
+// King-safety value for `c`'s king, centipawns from `c`'s own point of view
+// (positive = safer).  Not yet scaled by game phase.
+static int kingSafety(const Position& p, Color c) {
+  int ks = kingSquare(p, c);
+  if (ks < 0) return 0;
+  int kr = rowOf(ks), kc = colOf(ks);
+  Color enemy = opp(c);
+  int attackers = 0, shelter = 0;
+  for (int dr = -1; dr <= 1; ++dr)
+    for (int dc = -1; dc <= 1; ++dc) {
+      if (!dr && !dc) continue;
+      int r = kr + dr, col = kc + dc;
+      if (r < 0 || r >= 9 || col < 0 || col >= 9) continue;
+      int ns = sq(r, col);
+      if (isAttacked(p, ns, enemy)) ++attackers;
+      Piece q = p.board[ns];
+      if (q && colorOf(q) == c) {
+        PieceType t = typeOf(q);
+        if (t == PT_GOLD || t == PT_SILVER)        shelter += 22;
+        else if (t == PT_PAWN)                     shelter += 10;
+        else if (t == PT_LANCE || t == PT_KNIGHT)  shelter += 6;
+      }
+    }
+  static const int atkPenalty[9] =
+      {0, -15, -50, -110, -190, -290, -410, -540, -680};
+  int score = atkPenalty[attackers] + shelter;
+  // Open file through the king.
+  bool ownPawn = false, enemyFiler = false;
+  for (int r = 0; r < 9; ++r) {
+    Piece q = p.board[sq(r, kc)];
+    if (!q) continue;
+    if (colorOf(q) == c && typeOf(q) == PT_PAWN && !isPromoted(q)) ownPawn = true;
+    if (colorOf(q) == enemy &&
+        (typeOf(q) == PT_ROOK || typeOf(q) == PT_LANCE)) enemyFiler = true;
+  }
+  if (!ownPawn)   score -= 28;
+  if (enemyFiler) score -= 50;
+  return score;
+}
+
+// Static evaluation: material + piece-square tables + king safety, mapped to
+// Black's win probability in [0,1].
 double evalBlackWinProb(const Position& p) {
   int score = 0;
+  int phase = gamePhase(p);
+
   for (int s = 0; s < N_SQ; ++s) {
     Piece q = p.board[s];
-    if (!q || typeOf(q) == PT_KING) continue;
-    int v = isPromoted(q) ? promoValue(typeOf(q)) : baseValue(typeOf(q));
-    score += (colorOf(q) == BLACK) ? v : -v;
+    if (!q) continue;
+    PieceType t = typeOf(q);
+    int sgn = (colorOf(q) == BLACK) ? 1 : -1;
+    int bs = (colorOf(q) == BLACK) ? s : 80 - s;   // square in Black orientation
+    if (t == PT_KING) {
+      score += sgn * pstKingBlack(bs) * phase / 256;
+    } else {
+      score += sgn * (isPromoted(q) ? promoValue(t) : baseValue(t));
+      score += sgn * pstBlack(t, bs);
+    }
   }
   for (int t = PT_PAWN; t <= PT_ROOK; ++t) {
     int v = baseValue(PieceType(t));
-    score += p.hand[BLACK][t] * v;
-    score -= p.hand[WHITE][t] * v;
+    score += (p.hand[BLACK][t] - p.hand[WHITE][t]) * v;
   }
+  score += (kingSafety(p, BLACK) - kingSafety(p, WHITE)) * phase / 256;
+
   return 1.0 / (1.0 + std::exp(-double(score) / 512.0));
 }
 
