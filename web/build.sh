@@ -20,8 +20,8 @@ cmake --build build-web-st -j
 emcmake cmake -S . -B build-web-mt -DCMAKE_BUILD_TYPE=Release -DSHOGI_PTHREAD=ON
 cmake --build build-web-mt -j
 
-rm -rf build-web
 mkdir -p build-web
+rm -rf build-web/*
 cp build-web-st/shogi-st.js build-web-st/shogi-st.wasm build-web/
 cp build-web-mt/shogi-mt.js build-web-mt/shogi-mt.wasm build-web/
 cp web/index.html web/enable-threads.js build-web/
