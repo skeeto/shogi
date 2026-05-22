@@ -3,15 +3,17 @@
 
 /* Edited version of: coi-serviceworker v0.1.6 - Guido Zuidhof, licensed under MIT */
 // From here: https://github.com/gzuidhof/coi-serviceworker
+//
+// Hardened: a failed re-fetch no longer crashes the worker (the original read
+// `.status` off an undefined result, which broke the whole page load).
+// Requests that cannot be re-fetched as-is - notably navigation requests,
+// which stricter browsers refuse to let a worker re-issue - are retried by
+// URL, and a genuine failure surfaces as a clean network error.
 if(typeof window === 'undefined') {
   self.addEventListener("install", () => self.skipWaiting());
   self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 
   async function handleFetch(request) {
-    if(request.cache === "only-if-cached" && request.mode !== "same-origin") {
-      return;
-    }
-    
     if(request.mode === "no-cors") { // We need to set `credentials` to "omit" for no-cors requests, per this comment: https://bugs.chromium.org/p/chromium/issues/detail?id=1309901#c7
       request = new Request(request.url, {
         cache: request.cache,
@@ -28,24 +30,40 @@ if(typeof window === 'undefined') {
         signal: request.signal,
       });
     }
-    
-    let r = await fetch(request).catch(e => console.error(e));
-    
-    if(r.status === 0) {
+
+    let r;
+    try {
+      r = await fetch(request);
+    } catch (e) {
+      // Some requests (e.g. navigations on stricter browsers) cannot be
+      // re-fetched as-is; retry by URL, and fail cleanly if that fails too.
+      try {
+        r = await fetch(request.url);
+      } catch (e2) {
+        console.error("COOP/COEP Service Worker fetch failed:", e2);
+        return Response.error();
+      }
+    }
+    if(!r || r.status === 0) {
       return r;
     }
 
     const headers = new Headers(r.headers);
     headers.set("Cross-Origin-Embedder-Policy", "credentialless"); // or: require-corp
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
-    
+
     return new Response(r.body, { status: r.status, statusText: r.statusText, headers });
   }
 
   self.addEventListener("fetch", function(e) {
-    e.respondWith(handleFetch(e.request)); // respondWith must be executed synchonously (but can be passed a Promise)
+    const request = e.request;
+    // Requests we can't safely re-serve are left to the browser's default path.
+    if(request.cache === "only-if-cached" && request.mode !== "same-origin") {
+      return;
+    }
+    e.respondWith(handleFetch(request)); // respondWith must be executed synchonously (but can be passed a Promise)
   });
-  
+
 } else {
   (async function() {
     if(window.crossOriginIsolated !== false) return;
