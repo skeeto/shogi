@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
 
       bool aTurn = (pos.stm() == BLACK) == aIsBlack;
       Engine& e = aTurn ? engA : engB;
-      e.setPosition(pos);
+      e.setPosition(pos, hist);
       waitBudget(e, budget);
       Move mv = e.stats().bestMove;
       e.stop();

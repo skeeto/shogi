@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
       bool newTurn = (pos.stm() == S::BLACK) == newIsBlack;
       S::Move mv;
       if (newTurn) {
-        newEng.setPosition(pos);
+        newEng.setPosition(pos, hist);
         waitBudget(newEng, budget);
         mv = newEng.stats().bestMove;
         newEng.stop();

@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
       bool curTurn = (pos.stm() == S::BLACK) == curIsBlack;
       S::Move mv;
       if (curTurn) {
-        curEng.setPosition(pos);
+        curEng.setPosition(pos, hist);
         waitBudget(curEng, budget);
         mv = curEng.stats().bestMove;
         curEng.stop();
