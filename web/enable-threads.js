@@ -68,6 +68,15 @@ if(typeof window === 'undefined') {
   (async function() {
     if(window.crossOriginIsolated !== false) return;
 
+    // navigator.serviceWorker only exists in a secure context (https, or http
+    // on localhost/127.0.0.1).  Opened as a file:// URL or served over plain
+    // http from a non-loopback host, it is undefined - threads are impossible
+    // there anyway, so just fall back to the single-threaded build.
+    if(!navigator.serviceWorker) {
+      console.warn("COOP/COEP Service Worker unavailable: the page is not in a secure context. Serve it over http://localhost (or https) to enable the multi-threaded build.");
+      return;
+    }
+
     let registration = await navigator.serviceWorker.register(window.document.currentScript.src).catch(e => console.error("COOP/COEP Service Worker failed to register:", e));
     if(registration) {
       console.log("COOP/COEP Service Worker registered", registration.scope);
