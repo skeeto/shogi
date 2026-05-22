@@ -122,7 +122,6 @@ struct Scratch {
   std::vector<QMove>  qpick[Q_DEPTH + 2];   // qsearch scored moves, by depth
   std::vector<Move>   expandMoves;          // MCTS expand()
   std::vector<double> expandPr;
-  std::vector<size_t> expandIdx;
   std::vector<Node*>    path;               // MCTS iterate() selection path
   std::vector<uint64_t> pathHashes;         // position hashes parallel to path
 };
