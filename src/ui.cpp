@@ -22,13 +22,16 @@ namespace shogi {
 namespace {
 
 // --- Layout -----------------------------------------------------------------
-constexpr int WIN_W = 1024, WIN_H = 720;
+// Packed left to right: win-prob bar | hand | board | hand | win-prob bar.
+// The hand columns are deliberately narrow so the window stays close to
+// square, which fits mobile screens far better.
+constexpr int WIN_W = 880, WIN_H = 720;
 constexpr int CELL = 58;
-constexpr int BOARD_X = 251, BOARD_Y = 96;
+constexpr int BOARD_X = 179, BOARD_Y = 96;
 constexpr int BOARD_PX = 9 * CELL;
-constexpr int HAND_W = 188, HAND_EH = 74;
-constexpr int WHITE_HAND_X = 44, BLACK_HAND_X = 786;
-constexpr int WBAR_X = 18, BBAR_X = 990, BAR_W = 16;
+constexpr int HAND_W = 116, HAND_EH = 74;
+constexpr int WHITE_HAND_X = 44, BLACK_HAND_X = 714;
+constexpr int WBAR_X = 18, BBAR_X = 846, BAR_W = 16;
 // Computer move timing: think at least MIN_THINK_MS, then until MIN_PLAYOUTS
 // playouts have been searched from the position, but never past MAX_THINK_MS.
 // On a fast machine MIN_THINK_MS governs; on a slow one MAX_THINK_MS does.
@@ -631,8 +634,9 @@ void App::renderHands() {
       drawPiece(ren_, rc.x + 6, rc.y + 2, 56, 56, pc, false);
       int n = pos_.hand[c][t];
       RGBA tc = n ? C_TEXT : C_DIM;
-      drawText(ren_, int(rc.x) + 78, int(rc.y) + 12, 30,
-               "x" + std::to_string(n), tc);
+      // Count centred in the space to the right of the 56px piece glyph.
+      drawTextC(ren_, int(rc.x) + (62 + int(rc.w)) / 2, int(rc.y) + 17, 26,
+                "x" + std::to_string(n), tc);
     }
   }
 }
