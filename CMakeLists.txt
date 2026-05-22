@@ -49,6 +49,7 @@ endif()
 add_executable(shogi
   src/main.cpp
   src/board.cpp
+  src/mate.cpp
   src/mcts.cpp
   src/engine.cpp
   src/ui.cpp

@@ -139,12 +139,14 @@ class MCTS {
   void  expand(Node* n, Scratch& sc);
   void  freeTree(Node* n);
   bool  isRepetition(const Node* n, const Scratch& sc) const;   // fourfold
+  void  applyRootMate(const Move& m, int mateLen);  // inject a df-pn mate
 
   std::mutex mtx_;
   NodePool pool_;
   Node*  root_      = nullptr;
   size_t nodeCount_ = 0;
   std::atomic<bool> solved_{false};
+  std::atomic<bool> dfpnStarted_{false};            // df-pn pass claimed
   std::unordered_map<uint64_t, int> historyCount_;  // pre-search hash counts
 };
 

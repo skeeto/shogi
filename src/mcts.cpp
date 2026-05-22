@@ -1,5 +1,6 @@
 // mcts.cpp - Incremental MCTS implementation.
 #include "mcts.hpp"
+#include "mate.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -10,8 +11,10 @@ namespace shogi {
 namespace {
 #ifdef __EMSCRIPTEN__
 constexpr size_t MAX_NODES = 300000;      // smaller ceiling for the wasm heap
+constexpr int    DFPN_BUDGET = 16000;     // df-pn node budget (smaller on wasm)
 #else
 constexpr size_t MAX_NODES = 700000;      // tree-size ceiling
+constexpr int    DFPN_BUDGET = 120000;    // df-pn mate-search node budget
 #endif
 
 // Material value used only for capture-ordering in the policy prior.
@@ -166,6 +169,7 @@ void MCTS::advance(const Move& m, const Position& newPos,
   for (uint64_t h : history) ++historyCount_[h];
   // A reused subtree may already be solved; a fresh root never is.
   solved_.store(root_->proven != PV_NONE, std::memory_order_relaxed);
+  dfpnStarted_.store(false, std::memory_order_relaxed);
 }
 
 void MCTS::setRoot(const Position& p, const std::vector<uint64_t>& history) {
@@ -177,6 +181,7 @@ void MCTS::setRoot(const Position& p, const std::vector<uint64_t>& history) {
   historyCount_.clear();
   for (uint64_t h : history) ++historyCount_[h];
   solved_.store(false, std::memory_order_relaxed);
+  dfpnStarted_.store(false, std::memory_order_relaxed);
 }
 
 // True if `n`'s position has occurred a fourth time, counting the pre-search
@@ -270,6 +275,40 @@ MCTS::Pick MCTS::selectChild(Node* n, bool canMaterialize) {
   return best;
 }
 
+// Inject a df-pn-proven root mate: mark the mating move's child a proven loss
+// and the root a proven win.  Called with mtx_ held and root_->proven NONE.
+void MCTS::applyRootMate(const Move& m, int mateLen) {
+  Node* child = nullptr;
+  for (Node* c : root_->children)
+    if (c->move == m) { child = c; break; }
+  if (!child) {                              // materialise the mating move
+    for (size_t i = 0; i < root_->untried.size(); ++i)
+      if (root_->untried[i] == m) {           // and drop it from `untried`
+        root_->untried[i] = root_->untried.back();
+        root_->untried.pop_back();
+        root_->untriedPriors[i] = root_->untriedPriors.back();
+        root_->untriedPriors.pop_back();
+        break;
+      }
+    child = pool_.alloc();
+    ++nodeCount_;
+    child->parent = root_;
+    child->move   = m;
+    child->pos    = root_->pos;
+    doMove(child->pos, m);
+    root_->children.push_back(child);
+  }
+  child->proven = PV_LOSS;                   // the opponent is mated from here
+  child->provenDepth = uint16_t(mateLen - 1);
+  if (child->visits == 0) {                  // a valid most-visited best move
+    child->visits = 1;
+    child->valueBlack = provenValueBlack(child);
+  }
+  root_->proven = PV_WIN;
+  root_->provenDepth = uint16_t(mateLen);
+  solved_.store(true, std::memory_order_relaxed);
+}
+
 void MCTS::iterate(uint64_t& rng, Scratch& sc) {
   (void)rng;
   std::vector<Node*>& path = sc.path;       // reused; cleared each iteration
@@ -279,6 +318,26 @@ void MCTS::iterate(uint64_t& rng, Scratch& sc) {
   Node*  leaf = nullptr;
   bool   leafProven = false;
   double result = 0.0;
+
+  // The first iteration after a (re)root spends one worker on a df-pn mate
+  // search of the root rather than an MCTS playout; a proven mate solves the
+  // root.  Claimed exactly once via the atomic flag.
+  if (!dfpnStarted_.load(std::memory_order_relaxed) &&
+      !dfpnStarted_.exchange(true)) {
+    Position rootPos;
+    {
+      std::lock_guard<std::mutex> lk(mtx_);
+      if (!root_) return;
+      rootPos = root_->pos;
+    }
+    Move mateMove;
+    int mateLen = dfpnMate(rootPos, DFPN_BUDGET, mateMove);
+    if (mateLen > 0) {
+      std::lock_guard<std::mutex> lk(mtx_);
+      if (root_ && root_->proven == PV_NONE) applyRootMate(mateMove, mateLen);
+    }
+    return;
+  }
 
   {
     std::lock_guard<std::mutex> lk(mtx_);
