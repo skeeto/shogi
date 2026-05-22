@@ -77,15 +77,17 @@ void Engine::pump(int ms) {
 #endif
 }
 
-void Engine::setPosition(const Position& p) {
+void Engine::setPosition(const Position& p,
+                         const std::vector<uint64_t>& history) {
   stop();                 // join all workers before touching the tree
-  mcts_.setRoot(p);
+  mcts_.setRoot(p, history);
   startWorkers();
 }
 
-void Engine::advance(const Move& m, const Position& p) {
+void Engine::advance(const Move& m, const Position& p,
+                     const std::vector<uint64_t>& history) {
   stop();
-  mcts_.advance(m, p);
+  mcts_.advance(m, p, history);
   startWorkers();
 }
 

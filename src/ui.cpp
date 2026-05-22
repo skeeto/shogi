@@ -396,7 +396,7 @@ void App::applyMove(const Move& m) {
   recomputeLegal();
   updateResult();
   if (result_ == ONGOING)
-    engine_.advance(m, pos_);     // reuse the subtree pondered for this move
+    engine_.advance(m, pos_, hashes_);   // reuse the subtree pondered for `m`
   else
     engine_.stop();
 }
@@ -415,7 +415,7 @@ void App::startGame(Mode m) {
   promoDialog_ = false;
   thinking_ = false;
   recomputeLegal();
-  engine_.setPosition(pos_);
+  engine_.setPosition(pos_, hashes_);
   screen_ = SCR_PLAY;
 }
 

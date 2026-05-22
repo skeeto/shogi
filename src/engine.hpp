@@ -27,12 +27,16 @@ class Engine {
   explicit Engine(int threads = 0, double cpuct = 2.0);  // 0 -> auto-detect
   ~Engine();
 
-  // Switches the search to position `p` (resets the tree).
-  void setPosition(const Position& p);
+  // Switches the search to position `p` (resets the tree).  `history` holds
+  // the position hashes from the game start through `p` for repetition
+  // detection; callers that do not track it may pass none.
+  void setPosition(const Position& p,
+                   const std::vector<uint64_t>& history = {});
 
   // Advances the search by move `m` to position `p`, reusing the pondered
-  // subtree for `m` when possible.
-  void advance(const Move& m, const Position& p);
+  // subtree for `m` when possible.  `history` is as for setPosition.
+  void advance(const Move& m, const Position& p,
+               const std::vector<uint64_t>& history = {});
 
   // Stops all worker threads (no-op on a single-threaded build).
   void stop();

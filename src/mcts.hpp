@@ -12,7 +12,9 @@
 #pragma once
 #include "board.hpp"
 #include <atomic>
+#include <cstdint>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace shogi {
@@ -98,13 +100,16 @@ class MCTS {
   MCTS() = default;
   ~MCTS();
 
-  // Resets the tree to start searching from `p`.
-  void setRoot(const Position& p);
+  // Resets the tree to start searching from `p`.  `history` holds the Zobrist
+  // hashes of every position from the game's start through `p` inclusive, so
+  // the search can detect sennichite (fourfold repetition).
+  void setRoot(const Position& p, const std::vector<uint64_t>& history);
 
   // Advances the root by `m`, reusing the matching child's subtree if it
   // exists (so search done while pondering is not thrown away); otherwise
-  // starts fresh from `newPos`.
-  void advance(const Move& m, const Position& newPos);
+  // starts fresh from `newPos`.  `history` is as for setRoot.
+  void advance(const Move& m, const Position& newPos,
+               const std::vector<uint64_t>& history);
 
   // Runs exactly one MCTS iteration.  Safe to call from many threads; each
   // caller passes its own Scratch (reused buffers, never shared).  `rng` is
@@ -133,12 +138,14 @@ class MCTS {
   Pick  selectChild(Node* n, bool canMaterialize);
   void  expand(Node* n, Scratch& sc);
   void  freeTree(Node* n);
+  bool  isRepetition(const Node* n, const Scratch& sc) const;   // fourfold
 
   std::mutex mtx_;
   NodePool pool_;
   Node*  root_      = nullptr;
   size_t nodeCount_ = 0;
   std::atomic<bool> solved_{false};
+  std::unordered_map<uint64_t, int> historyCount_;  // pre-search hash counts
 };
 
 }  // namespace shogi

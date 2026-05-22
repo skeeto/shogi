@@ -139,7 +139,8 @@ static size_t countNodes(const Node* n) {
   return c;
 }
 
-void MCTS::advance(const Move& m, const Position& newPos) {
+void MCTS::advance(const Move& m, const Position& newPos,
+                   const std::vector<uint64_t>& history) {
   std::lock_guard<std::mutex> lk(mtx_);
   Node* keep = nullptr;
   if (root_)
@@ -161,17 +162,34 @@ void MCTS::advance(const Move& m, const Position& newPos) {
     root_->pos = newPos;
     nodeCount_ = 1;
   }
+  historyCount_.clear();
+  for (uint64_t h : history) ++historyCount_[h];
   // A reused subtree may already be solved; a fresh root never is.
   solved_.store(root_->proven != PV_NONE, std::memory_order_relaxed);
 }
 
-void MCTS::setRoot(const Position& p) {
+void MCTS::setRoot(const Position& p, const std::vector<uint64_t>& history) {
   std::lock_guard<std::mutex> lk(mtx_);
   freeTree(root_);
   root_ = pool_.alloc();
   root_->pos = p;
   nodeCount_ = 1;
+  historyCount_.clear();
+  for (uint64_t h : history) ++historyCount_[h];
   solved_.store(false, std::memory_order_relaxed);
+}
+
+// True if `n`'s position has occurred a fourth time, counting the pre-search
+// game history and the tree path from the root down to `n` - i.e. sennichite.
+// `sc.pathHashes` holds the hashes along the current descent, [root .. n].
+bool MCTS::isRepetition(const Node* n, const Scratch& sc) const {
+  uint64_t h = n->pos.hash;
+  int count = 0;
+  for (size_t i = 1; i < sc.pathHashes.size(); ++i)   // skip root: it is below
+    if (sc.pathHashes[i] == h) ++count;
+  auto it = historyCount_.find(h);
+  if (it != historyCount_.end()) count += it->second;   // start..root inclusive
+  return count >= 4;
 }
 
 // Expand: discover the legal moves from `n` into `untried` with their policy
@@ -179,9 +197,16 @@ void MCTS::setRoot(const Position& p) {
 // selectChild/iterate, so expand() creates no nodes - it only records the
 // candidate moves and their priors.
 void MCTS::expand(Node* n, Scratch& sc) {
+  n->movesGenerated = true;
+  // Sennichite: a position reached a fourth time ends the game.  Perpetual
+  // check - the repeated position has the side to move in check - is a loss
+  // for the checking side; any other fourfold repetition is a draw.
+  if (isRepetition(n, sc)) {
+    n->proven = inCheck(n->pos, n->pos.stm()) ? PV_WIN : PV_DRAW;
+    return;
+  }
   std::vector<Move>& moves = sc.expandMoves;       // reused scratch buffers
   generateLegalMoves(n->pos, moves, sc);
-  n->movesGenerated = true;
   if (moves.empty()) {
     n->proven = PV_LOSS;          // no legal reply -> the side to move loses
     return;
@@ -248,7 +273,9 @@ MCTS::Pick MCTS::selectChild(Node* n, bool canMaterialize) {
 void MCTS::iterate(uint64_t& rng, Scratch& sc) {
   (void)rng;
   std::vector<Node*>& path = sc.path;       // reused; cleared each iteration
+  std::vector<uint64_t>& pathHashes = sc.pathHashes;   // hashes parallel to path
   path.clear();
+  pathHashes.clear();
   Node*  leaf = nullptr;
   bool   leafProven = false;
   double result = 0.0;
@@ -258,6 +285,7 @@ void MCTS::iterate(uint64_t& rng, Scratch& sc) {
     if (!root_ || root_->proven != PV_NONE) return;   // solved: nothing to do
     Node* n = root_;
     path.push_back(n);
+    pathHashes.push_back(n->pos.hash);
     for (;;) {
       if (n->proven != PV_NONE) break;
       if (!n->movesGenerated) {
@@ -289,6 +317,7 @@ void MCTS::iterate(uint64_t& rng, Scratch& sc) {
         n->children.push_back(child);
         ++child->virtualLoss;
         path.push_back(child);
+        pathHashes.push_back(child->pos.hash);
         n = child;
         continue;
       }
@@ -296,6 +325,7 @@ void MCTS::iterate(uint64_t& rng, Scratch& sc) {
       n = pick.child;
       ++n->virtualLoss;
       path.push_back(n);
+      pathHashes.push_back(n->pos.hash);
     }
     leaf = n;
     leafProven = (leaf->proven != PV_NONE);   // capture under the lock
