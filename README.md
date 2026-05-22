@@ -3,6 +3,8 @@
 A standalone Shogi (Japanese chess) game in C++ with an SDL3 interface and a
 multi-threaded, incremental Monte-Carlo Tree Search (MCTS) AI.
 
+[**Play online multi-threaded Wasm build**](https://nullprogram.com/shogi/)
+
 ![](docs/screenshot.png)
 
 ## Features
