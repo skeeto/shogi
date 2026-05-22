@@ -27,7 +27,7 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `src/mcts.{hpp,cpp}`  | Thread-safe PUCT MCTS over a shared tree |
 | `src/mate.{hpp,cpp}`  | df-pn proof-number checkmate (tsume) search |
 | `src/engine.{hpp,cpp}`| Worker-thread pool driving the search |
-| `src/ui.{hpp,cpp}`    | SDL3 rendering, input, game flow |
+| `src/ui.cpp`          | SDL3 rendering, input, game flow |
 | `src/glyphs.hpp`      | Embedded glyph atlas (ASCII + kanji), generated |
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
 | `test/`               | Correctness + strength harnesses (see below) |

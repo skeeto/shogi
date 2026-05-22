@@ -59,9 +59,8 @@ endif()
 
 # WIN32: link the Windows build for the GUI ("windows") subsystem so it opens
 # with no console window.  SDL supplies the WinMain entry point (see
-# src/main.cpp).  The flag is silently ignored on every non-Windows platform.
+# src/ui.cpp).  The flag is silently ignored on every non-Windows platform.
 add_executable(shogi WIN32
-  src/main.cpp
   src/board.cpp
   src/mate.cpp
   src/mcts.cpp
