@@ -269,7 +269,9 @@ void drawPiece(SDL_Renderer* r, float x, float y, float w, float h, Piece pc,
   int ki = kanjiIndex(pc);
   if (g_kanji[ki]) {
     const GlyphInfo& g = KANJI_GLYPHS[ki];
-    float gh = h * 0.60f;                          // kanji ~60% of tile height
+    float gh = h * 0.54f;                  // kanji ~54% of tile height: a
+                                           // little inset so wide glyphs
+                                           // (飛, 銀 ...) clear the edges
     float gw = g.w * (gh / g.h);
     float gcx = cx, gcy = y + h * (up ? 0.55f : 0.45f);  // toward the wide end
     SDL_FRect dst{gcx - gw / 2, gcy - gh / 2, gw, gh};
