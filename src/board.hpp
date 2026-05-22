@@ -147,6 +147,11 @@ bool isAttacked(const Position& p, int s, Color by);
 // Apply a (legal) move in place.
 void doMove(Position& p, const Move& m);
 
+// Piece values (centipawns), indexed by PieceType; exposed so a tuning
+// harness can fit them.  Slots 1..7 are P,L,N,S,G,B,R.
+extern int evalPieceBase[9];
+extern int evalPiecePromo[9];
+
 // Static evaluation, returned as Black's win probability in [0,1].
 double evalBlackWinProb(const Position& p);
 

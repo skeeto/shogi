@@ -376,29 +376,14 @@ void generateLegalMoves(const Position& p, std::vector<Move>& out) {
 // ---------------------------------------------------------------------------
 // Evaluation
 // ---------------------------------------------------------------------------
-static int baseValue(PieceType t) {
-  switch (t) {
-    case PT_PAWN:   return 90;
-    case PT_LANCE:  return 230;
-    case PT_KNIGHT: return 250;
-    case PT_SILVER: return 360;
-    case PT_GOLD:   return 440;
-    case PT_BISHOP: return 560;
-    case PT_ROOK:   return 640;
-    default:        return 0;
-  }
-}
-static int promoValue(PieceType t) {
-  switch (t) {
-    case PT_PAWN:   return 540;
-    case PT_LANCE:  return 480;
-    case PT_KNIGHT: return 510;
-    case PT_SILVER: return 490;
-    case PT_BISHOP: return 830;
-    case PT_ROOK:   return 950;
-    default:        return 0;
-  }
-}
+// Piece values in centipawns, indexed by PieceType (slots 1..7 used; 0/8 are
+// the empty/king slots).  Held in mutable tables so test/tune_eval.cpp can fit
+// them from self-play games; the defaults are the hand-tuned values.
+//                       -    P    L    N    S    G    B    R    K
+int evalPieceBase[9]  = {0,  91, 230, 241, 302, 433, 476, 587,  0};
+int evalPiecePromo[9] = {0, 494, 425, 352, 307,   0, 727, 910,  0};
+static int baseValue(PieceType t)  { return evalPieceBase[t]; }
+static int promoValue(PieceType t) { return evalPiecePromo[t]; }
 
 // Game phase in [0,256]: 256 at the opening, 0 in a bare-king endgame.  King
 // safety terms scale by this, so the king is free to march in the endgame.
