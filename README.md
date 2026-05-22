@@ -3,6 +3,8 @@
 A standalone Shogi (Japanese chess) game in C++ with an SDL3 interface and a
 multi-threaded, incremental Monte-Carlo Tree Search (MCTS) AI.
 
+![](docs/screenshot.png)
+
 ## Features
 
 - **Three play modes** — human vs human (hotseat), human vs computer (either
