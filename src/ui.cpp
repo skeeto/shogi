@@ -254,8 +254,8 @@ void buildTileTextures(SDL_Renderer* r) {
 // Draw a shogi piece: an anti-aliased pentagon tile pointing toward the enemy,
 // with the piece kanji (red when promoted).
 void drawPiece(SDL_Renderer* r, float x, float y, float w, float h, Piece pc,
-               bool selected) {
-  bool up = colorOf(pc) == BLACK;          // Black sits at the bottom
+               bool selected, bool flipped) {
+  bool up = (colorOf(pc) == BLACK) != flipped;   // bottom player faces the viewer
   float cx = x + w / 2.f;
   SDL_FRect dst{x, y, w, h};
   SDL_FlipMode flip = up ? SDL_FLIP_NONE : SDL_FLIP_VERTICAL;
@@ -353,6 +353,7 @@ class App {
   bool running_ = true;
   int  webCssW_ = 0, webCssH_ = 0;     // last canvas CSS size synced (web)
   bool human_[2] = {true, true};
+  bool flipped_ = false;               // CVH: orient with White at the bottom
 
   Position pos_;
   std::vector<uint64_t> hashes_;
@@ -412,6 +413,7 @@ void App::startGame(Mode m) {
   mode_ = m;
   human_[BLACK] = (m == MODE_HVH || m == MODE_HVC);
   human_[WHITE] = (m == MODE_HVH || m == MODE_CVH);
+  flipped_ = (m == MODE_CVH);           // human plays White: White on the bottom
   pos_ = initialPosition();
   hashes_.clear();
   hashes_.push_back(pos_.hash);
@@ -433,10 +435,12 @@ int App::squareAt(float mx, float my) const {
     return -1;
   int col = int((mx - BOARD_X) / CELL);
   int row = int((my - BOARD_Y) / CELL);
+  if (flipped_) { col = 8 - col; row = 8 - row; }
   return sq(row, col);
 }
 SDL_FRect App::handEntry(Color c, int idx) const {
-  int x = (c == WHITE) ? WHITE_HAND_X : BLACK_HAND_X;
+  // The bottom player's hand sits on the right; default is Black on bottom.
+  int x = ((c == WHITE) != flipped_) ? WHITE_HAND_X : BLACK_HAND_X;
   return SDL_FRect{float(x), float(BOARD_Y + idx * HAND_EH), float(HAND_W),
                    float(HAND_EH - 10)};
 }
@@ -555,10 +559,11 @@ void App::renderBoard() {
   fillRect(ren_, BOARD_X, BOARD_Y, BOARD_PX, BOARD_PX, C_WOOD);
 
   // Highlight last move and current selection.
-  auto squareRect = [](int s) {
-    return SDL_FRect{float(BOARD_X + colOf(s) * CELL),
-                     float(BOARD_Y + rowOf(s) * CELL), float(CELL),
-                     float(CELL)};
+  auto squareRect = [this](int s) {
+    int c = colOf(s), r = rowOf(s);
+    if (flipped_) { c = 8 - c; r = 8 - r; }
+    return SDL_FRect{float(BOARD_X + c * CELL), float(BOARD_Y + r * CELL),
+                     float(CELL), float(CELL)};
   };
   if (!lastMove_.isNull()) {
     SDL_FRect t = squareRect(lastMove_.to);
@@ -590,7 +595,7 @@ void App::renderBoard() {
     Piece pc = pos_.board[s];
     if (!pc) continue;
     SDL_FRect rc = squareRect(s);
-    drawPiece(ren_, rc.x, rc.y, rc.w, rc.h, pc, s == selSq_);
+    drawPiece(ren_, rc.x, rc.y, rc.w, rc.h, pc, s == selSq_, flipped_);
   }
   // Legal-destination dots for the current selection.
   std::vector<int> targets;
@@ -625,7 +630,7 @@ void App::renderHands() {
   static const char* names[2] = {"BLACK HAND", "WHITE HAND"};
   for (int c = 0; c < 2; ++c) {
     Color col = Color(c);
-    int x = (col == WHITE) ? WHITE_HAND_X : BLACK_HAND_X;
+    int x = ((col == WHITE) != flipped_) ? WHITE_HAND_X : BLACK_HAND_X;
     drawTextC(ren_, x + HAND_W / 2, BOARD_Y - 30, 17,
               names[c == BLACK ? 0 : 1], C_DIM);
     for (int i = 0; i < 7; ++i) {
@@ -635,7 +640,7 @@ void App::renderHands() {
       fillRect(ren_, rc.x, rc.y, rc.w, rc.h, sel ? C_BTN_HOT : C_PANEL);
       outlineRect(ren_, rc.x, rc.y, rc.w, rc.h, RGBA{20, 22, 28, 255});
       Piece pc = makePiece(col, t, false);
-      drawPiece(ren_, rc.x + 6, rc.y + 2, 56, 56, pc, false);
+      drawPiece(ren_, rc.x + 6, rc.y + 2, 56, 56, pc, false, flipped_);
       int n = pos_.hand[c][t];
       RGBA tc = n ? C_TEXT : C_DIM;
       // Count centred in the space to the right of the 56px piece glyph.
@@ -647,9 +652,10 @@ void App::renderHands() {
 
 void App::renderBars(const MCTS::Stats& st) {
   double pb = st.blackWinProb;
+  // The bottom player's bar sits on the right; default is Black on bottom.
   struct B { int x; double frac; RGBA col; const char* tag; } bars[2] = {
-      {WBAR_X, 1.0 - pb, C_BAR_W, "W"},
-      {BBAR_X, pb, C_BAR_B, "B"}};
+      {flipped_ ? BBAR_X : WBAR_X, 1.0 - pb, C_BAR_W, "W"},
+      {flipped_ ? WBAR_X : BBAR_X, pb, C_BAR_B, "B"}};
   for (const B& b : bars) {
     fillRect(ren_, b.x, BOARD_Y, BAR_W, BOARD_PX, C_PANEL);
     int h = int(BOARD_PX * std::clamp(b.frac, 0.0, 1.0));
