@@ -1,8 +1,14 @@
 // mcts.h - Incremental, thread-safe Monte-Carlo Tree Search.
 //
 // A single shared tree is grown by many worker threads.  Selection, expansion
-// and back-propagation run under one mutex; the (much longer) random rollout
+// and back-propagation run under one mutex; the (much longer) leaf evaluation
 // runs lock-free.  Virtual loss steers concurrent threads onto distinct paths.
+//
+// Children are materialised lazily: a node carries the full legal-move list
+// with priors, and PUCT selection ranges over both the realised children and
+// the not-yet-realised moves (a "virtual child" valued at the FPU estimate).
+// A move only becomes a Node when PUCT picks it, so a search never spends an
+// evaluation on a move it would not have explored.
 #pragma once
 #include "board.hpp"
 #include <mutex>
@@ -13,15 +19,16 @@ namespace shogi {
 struct Node {
   Move  move;                       // move from parent that produced this node
   Node* parent = nullptr;
-  std::vector<Node*> children;
-  std::vector<Move>  untried;       // legal moves not yet expanded
+  std::vector<Node*> children;      // materialised children only
+  std::vector<Move>  untried;       // legal moves not yet materialised
   std::vector<float> untriedPriors; // policy priors, parallel to `untried`
   Position pos;                     // position AT this node
   int    visits      = 0;
   double valueBlack   = 0.0;        // summed results, Black's perspective [0,1]
   int    virtualLoss = 0;
   double prior       = 1.0;         // policy prior of the move into this node
-  bool   expanded    = false;
+  bool   visitedOnce    = false;    // has been an iteration's leaf at least once
+  bool   movesGenerated = false;    // legal moves discovered into `untried`
   bool   terminal    = false;
   double terminalBlack = 0.0;
 };
@@ -68,7 +75,8 @@ class NodePool {
     n->valueBlack = 0.0;
     n->virtualLoss = 0;
     n->prior = 1.0;
-    n->expanded = false;
+    n->visitedOnce = false;
+    n->movesGenerated = false;
     n->terminal = false;
     n->terminalBlack = 0.0;
     // `pos` is overwritten by the caller right after alloc().
@@ -109,7 +117,10 @@ class MCTS {
   double cpuct = 2.0;               // PUCT exploration constant (tunable)
 
  private:
-  Node* selectChild(Node* n);
+  // PUCT pick: either an existing child (untriedIdx < 0) or an index into
+  // n->untried to be materialised (child == nullptr).
+  struct Pick { Node* child = nullptr; int untriedIdx = -1; };
+  Pick  selectChild(Node* n, bool canMaterialize);
   void  expand(Node* n, Scratch& sc);
   void  freeTree(Node* n);
 

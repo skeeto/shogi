@@ -111,13 +111,14 @@ void MCTS::setRoot(const Position& p) {
   nodeCount_ = 1;
 }
 
-// Expand: discover the legal moves from `n`, or flag it terminal.  Moves are
-// stored sorted ascending by policy prior, so iterate() pops the most
-// promising candidate from the back of `untried`.
+// Expand: discover the legal moves from `n` into `untried` with their policy
+// priors, or flag the node terminal.  Children are materialised lazily by
+// selectChild/iterate, so expand() creates no nodes - it only records the
+// candidate moves and their priors.
 void MCTS::expand(Node* n, Scratch& sc) {
   std::vector<Move>& moves = sc.expandMoves;       // reused scratch buffers
   generateLegalMoves(n->pos, moves, sc);
-  n->expanded = true;
+  n->movesGenerated = true;
   if (moves.empty()) {
     // Side to move has no legal reply -> that side loses.
     n->terminal = true;
@@ -133,36 +134,43 @@ void MCTS::expand(Node* n, Scratch& sc) {
     pr[i] = movePrior(n->pos, moves[i], enemyKing);
     sum += pr[i];
   }
-  std::vector<size_t>& idx = sc.expandIdx;
-  idx.resize(m);
-  for (size_t i = 0; i < m; ++i) idx[i] = i;
-  std::sort(idx.begin(), idx.end(),
-            [&](size_t a, size_t b) { return pr[a] < pr[b]; });
   n->untried.resize(m);
   n->untriedPriors.resize(m);
-  n->children.reserve(m);                          // grown one child per visit
   for (size_t i = 0; i < m; ++i) {
-    n->untried[i]       = moves[idx[i]];
-    n->untriedPriors[i] = float(pr[idx[i]] / sum);     // normalised to sum 1
+    n->untried[i]       = moves[i];
+    n->untriedPriors[i] = float(pr[i] / sum);          // normalised to sum 1
   }
 }
 
-// PUCT child selection from the perspective of the side to move at `n`.
+// PUCT selection from the perspective of the side to move at `n`, ranging over
+// both the materialised children and the not-yet-materialised moves (each a
+// "virtual child" valued at the FPU estimate).  When `canMaterialize` is false
+// (the node pool is full) only existing children are considered.
 // score = exploit + CPUCT * prior * sqrt(parentN) / (1 + childN)
-Node* MCTS::selectChild(Node* n) {
+MCTS::Pick MCTS::selectChild(Node* n, bool canMaterialize) {
   const bool blackToMove = (n->pos.stm() == BLACK);
   const double sqrtParent = std::sqrt(double(n->visits + n->virtualLoss + 1));
-  Node* best = nullptr;
+  const double fpu = 0.5;                  // flat FPU; parent-relative later
+
+  Pick best;
   double bestScore = -1e18;
   for (Node* c : n->children) {
     int vis = c->visits + c->virtualLoss;
     // Each pending virtual loss counts as a loss for the side choosing here.
     double vb = c->valueBlack + (blackToMove ? 0.0 : double(c->virtualLoss));
-    double meanBlack = (vis > 0) ? vb / vis : 0.5;       // FPU: optimistic 0.5
+    double meanBlack = (vis > 0) ? vb / vis : 0.5;
     double exploit = blackToMove ? meanBlack : (1.0 - meanBlack);
     double explore = cpuct * c->prior * sqrtParent / (1.0 + vis);
     double score = exploit + explore;
-    if (score > bestScore) { bestScore = score; best = c; }
+    if (score > bestScore) { bestScore = score; best = Pick{c, -1}; }
+  }
+  if (canMaterialize) {
+    for (size_t i = 0; i < n->untried.size(); ++i) {
+      // A virtual child has zero visits: childN = 0.
+      double explore = cpuct * n->untriedPriors[i] * sqrtParent;
+      double score = fpu + explore;
+      if (score > bestScore) { bestScore = score; best = Pick{nullptr, int(i)}; }
+    }
   }
   return best;
 }
@@ -179,32 +187,44 @@ void MCTS::iterate(uint64_t& rng, Scratch& sc) {
     if (!root_) return;
     Node* n = root_;
     path.push_back(n);
-    // Descend through fully-expanded interior nodes.
-    while (n->expanded && !n->terminal && n->untried.empty() &&
-           !n->children.empty()) {
-      n = selectChild(n);
-      ++n->virtualLoss;
-      path.push_back(n);
-    }
-    if (!n->terminal) {
-      if (!n->expanded) expand(n, sc);
-      if (!n->terminal && !n->untried.empty() && nodeCount_ < MAX_NODES) {
-        Move mv = n->untried.back();
+    for (;;) {
+      if (n->terminal) break;
+      if (!n->movesGenerated) {
+        if (!n->visitedOnce) {
+          n->visitedOnce = true;            // first visit: evaluate this node
+          break;
+        }
+        expand(n, sc);                      // second visit: discover the moves
+        if (n->terminal) break;
+      }
+      // Moves generated and non-terminal: PUCT-select a continuation.
+      Pick pick = selectChild(n, nodeCount_ < MAX_NODES);
+      if (pick.untriedIdx >= 0) {
+        // Materialise the chosen move; the new child becomes the next leaf.
+        size_t i = size_t(pick.untriedIdx);
+        Move  mv  = n->untried[i];
+        float pri = n->untriedPriors[i];
+        n->untried[i]       = n->untried.back();     // swap-pop the chosen move
+        n->untriedPriors[i] = n->untriedPriors.back();
         n->untried.pop_back();
-        float pri = n->untriedPriors.back();
         n->untriedPriors.pop_back();
         Node* child = pool_.alloc();
         ++nodeCount_;
         child->parent = n;
-        child->move = mv;
-        child->prior = pri;
-        child->pos = n->pos;
+        child->move   = mv;
+        child->prior  = pri;
+        child->pos    = n->pos;
         doMove(child->pos, mv);
         n->children.push_back(child);
         ++child->virtualLoss;
         path.push_back(child);
         n = child;
+        continue;
       }
+      if (!pick.child) break;               // pool full, nothing to descend to
+      n = pick.child;
+      ++n->virtualLoss;
+      path.push_back(n);
     }
     leaf = n;
     if (leaf->terminal) result = leaf->terminalBlack;
