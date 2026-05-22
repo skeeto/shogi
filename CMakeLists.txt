@@ -71,6 +71,13 @@ add_executable(shogi WIN32
 target_include_directories(shogi PRIVATE src)
 target_link_libraries(shogi PRIVATE SDL3::SDL3)
 
+# Windows: compile the gold-general application icon (src/shogi.ico) into the
+# executable.  windres locates the .ico via the src/ include path above.
+if(WIN32)
+  enable_language(RC)
+  target_sources(shogi PRIVATE src/shogi.rc)
+endif()
+
 if(MSVC)
   target_compile_options(shogi PRIVATE /W3)
 else()
