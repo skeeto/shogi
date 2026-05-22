@@ -750,7 +750,7 @@ bool App::init() {
   win_ = SDL_CreateWindow("Shogi", WIN_W, WIN_H,
                           SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE);
 #else
-  win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H,
+  win_ = SDL_CreateWindow("Shogi", WIN_W, WIN_H,
                           SDL_WINDOW_HIGH_PIXEL_DENSITY);
 #endif
   if (!win_) {
