@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shogi</title>
+<!-- Installable as a PWA.  The COOP/COEP service worker (enable-threads.js)
+     also satisfies the service-worker install criterion; in standalone mode
+     it still injects the cross-origin-isolation headers, so the threaded
+     build works in the installed app too (iOS standalone is the wobbly
+     case and falls back to single-threaded). -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1b20">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  html, body {
+    margin: 0; height: 100%; background: #1a1b20; color: #cfcfd4;
+    font-family: system-ui, sans-serif;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  /* The C++ side sizes the canvas: SDL sets its CSS (display) size, and
+     syncCanvasSize() sets the backing store to device resolution.  The page
+     only needs to centre it. */
+  canvas { display: block; background: #000; outline: none; }
+  #status { padding: 10px 10px 0; font-size: 14px; color: #7f7f88; }
+  #links  { padding: 6px 10px 10px; font-size: 14px; }
+  #links a { color: #b5a672; text-decoration: none; }
+  #links a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<canvas id="canvas" width="1024" height="720"
+        tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<div id="status">loading...</div>
+<div id="links">
+  <a href="tutorial.html" target="_blank">tutorial</a> |
+  <a href="https://github.com/skeeto/shogi" target="_blank">source</a>
+</div>
+
+<!-- Tries to cross-origin-isolate the page (via a service worker) so the
+     multi-threaded build can use SharedArrayBuffer.  On the first visit this
+     registers the worker and reloads once.  Harmless where it cannot help. -->
+<script src="enable-threads.js"></script>
+
+<script>
+  var statusEl = document.getElementById('status');
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    setStatus: function (t) { statusEl.textContent = t; },
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.error(t); },
+    onRuntimeInitialized: function () { statusEl.textContent = ''; },
+  };
+
+  // Load the multi-threaded build when the browser gives us a cross-origin
+  // isolated context (SharedArrayBuffer); otherwise the single-threaded one.
+  function loadBuild() {
+    var threaded = (self.crossOriginIsolated === true) &&
+                   (typeof SharedArrayBuffer !== 'undefined');
+    statusEl.textContent =
+      'loading (' + (threaded ? 'multi-threaded' : 'single-threaded') + ')...';
+    var s = document.createElement('script');
+    s.src = threaded ? 'shogi-mt.js' : 'shogi-st.js';
+    document.body.appendChild(s);
+  }
+
+  if (!self.crossOriginIsolated && 'serviceWorker' in navigator &&
+      !navigator.serviceWorker.controller) {
+    // enable-threads.js is probably about to reload the page; wait for that
+    // rather than load the single-threaded build now.  If no reload happens
+    // (service worker unavailable/blocked), fall back after a short delay.
+    statusEl.textContent = 'enabling multi-threading...';
+    setTimeout(loadBuild, 3000);
+  } else {
+    loadBuild();
+  }
+</script>
+</body>
+</html>
