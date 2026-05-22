@@ -43,6 +43,7 @@ class Engine {
 
   MCTS::Stats stats() { return mcts_.snapshot(); }
   int  visits()       { return mcts_.rootVisits(); }
+  bool solved()       { return mcts_.solved(); }   // root game value proven
   int  threadCount() const { return nThreads_; }
 
  private:

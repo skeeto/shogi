@@ -11,10 +11,16 @@
 // evaluation on a move it would not have explored.
 #pragma once
 #include "board.hpp"
+#include <atomic>
 #include <mutex>
 #include <vector>
 
 namespace shogi {
+
+// Game-theoretic status of a node, from its own side-to-move's perspective.
+// A node with no legal move is a proven loss; the MCTS-Solver propagates
+// proven values up the tree from there.
+enum Proven : uint8_t { PV_NONE = 0, PV_WIN, PV_LOSS, PV_DRAW };
 
 struct Node {
   Move  move;                       // move from parent that produced this node
@@ -23,14 +29,14 @@ struct Node {
   std::vector<Move>  untried;       // legal moves not yet materialised
   std::vector<float> untriedPriors; // policy priors, parallel to `untried`
   Position pos;                     // position AT this node
-  int    visits      = 0;
-  double valueBlack   = 0.0;        // summed results, Black's perspective [0,1]
-  int    virtualLoss = 0;
-  double prior       = 1.0;         // policy prior of the move into this node
-  bool   visitedOnce    = false;    // has been an iteration's leaf at least once
-  bool   movesGenerated = false;    // legal moves discovered into `untried`
-  bool   terminal    = false;
-  double terminalBlack = 0.0;
+  int     visits     = 0;
+  double  valueBlack = 0.0;         // summed results, Black's perspective [0,1]
+  int     virtualLoss = 0;
+  double  prior      = 1.0;         // policy prior of the move into this node
+  bool     visitedOnce    = false;  // has been an iteration's leaf at least once
+  bool     movesGenerated = false;  // legal moves discovered into `untried`
+  uint8_t  proven = PV_NONE;        // solved game value, or PV_NONE if unknown
+  uint16_t provenDepth = 0;         // plies to the proven result (mate distance)
 };
 
 // Slab allocator for Nodes.  Nodes are carved from large slabs and recycled
@@ -77,8 +83,8 @@ class NodePool {
     n->prior = 1.0;
     n->visitedOnce = false;
     n->movesGenerated = false;
-    n->terminal = false;
-    n->terminalBlack = 0.0;
+    n->proven = PV_NONE;
+    n->provenDepth = 0;
     // `pos` is overwritten by the caller right after alloc().
   }
   static constexpr size_t SLAB = 8192;
@@ -114,6 +120,10 @@ class MCTS {
   Stats snapshot();
   int   rootVisits();
 
+  // True once the root's game value is proven by the MCTS-Solver: the search
+  // can stop, there is nothing left to learn.  Lock-free, cheap to poll.
+  bool  solved() const { return solved_.load(std::memory_order_relaxed); }
+
   double cpuct = 2.0;               // PUCT exploration constant (tunable)
 
  private:
@@ -128,6 +138,7 @@ class MCTS {
   NodePool pool_;
   Node*  root_      = nullptr;
   size_t nodeCount_ = 0;
+  std::atomic<bool> solved_{false};
 };
 
 }  // namespace shogi

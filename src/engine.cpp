@@ -47,7 +47,9 @@ void Engine::startWorkers() {
     workers_.emplace_back([this, seed] {
       uint64_t rng = seed;            // each worker owns its RNG state
       Scratch sc;                     // and its own reused search buffers
-      while (run_.load(std::memory_order_relaxed)) mcts_.iterate(rng, sc);
+      // Stop once the position is solved - there is nothing left to search.
+      while (run_.load(std::memory_order_relaxed) && !mcts_.solved())
+        mcts_.iterate(rng, sc);
     });
   }
 #endif
@@ -67,6 +69,7 @@ void Engine::pump(int ms) {
   auto deadline = std::chrono::steady_clock::now() +
                   std::chrono::milliseconds(ms);
   do {
+    if (mcts_.solved()) break;
     for (int i = 0; i < 128; ++i) mcts_.iterate(rng_, scratch_);
   } while (std::chrono::steady_clock::now() < deadline);
 #else
