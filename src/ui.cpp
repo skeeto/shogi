@@ -62,6 +62,13 @@ void outlineRect(SDL_Renderer* r, float x, float y, float w, float h, RGBA c) {
   SDL_FRect q{x, y, w, h};
   SDL_RenderRect(r, &q);
 }
+// Mouse position in logical (render) coordinates - the window may be a
+// different size, so window pixels must be converted.
+void mousePos(SDL_Renderer* r, float& x, float& y) {
+  float wx = 0, wy = 0;
+  SDL_GetMouseState(&wx, &wy);
+  SDL_RenderCoordinatesFromWindow(r, wx, wy, &x, &y);
+}
 // --- Text: anti-aliased glyph textures built once from glyphs.hpp -----------
 SDL_Texture* g_ascii[95] = {};
 SDL_Texture* g_kanji[15] = {};
@@ -521,7 +528,7 @@ void App::renderMenu() {
   drawTextC(ren_, WIN_W / 2, 188, 17,
             "MULTITHREADED MONTE CARLO TREE SEARCH", C_DIM);
   float mx, my;
-  SDL_GetMouseState(&mx, &my);
+  mousePos(ren_, mx, my);
   for (const Button& b : menuButtons_)
     drawButton(ren_, b, b.hit(mx, my));
   drawTextC(ren_, WIN_W / 2, 624, 17,
@@ -672,7 +679,7 @@ void App::renderPromoDialog() {
   promoYes_ = Button{{bx + 30, by + 84, 150, 48}, "YES"};
   promoNo_ = Button{{bx + 200, by + 84, 150, 48}, "NO"};
   float mx, my;
-  SDL_GetMouseState(&mx, &my);
+  mousePos(ren_, mx, my);
   drawButton(ren_, promoYes_, promoYes_.hit(mx, my));
   drawButton(ren_, promoNo_, promoNo_.hit(mx, my));
 }
@@ -686,6 +693,9 @@ void App::renderResult() {
 }
 
 void App::render() {
+  // Clear the whole output (including the letterbox margin) to the background.
+  setColor(ren_, C_BG);
+  SDL_RenderClear(ren_);
   fillRect(ren_, 0, 0, WIN_W, WIN_H, C_BG);
   if (screen_ == SCR_MENU) {
     renderMenu();
@@ -698,7 +708,7 @@ void App::render() {
   renderStatus(st);
 
   float mx, my;
-  SDL_GetMouseState(&mx, &my);
+  mousePos(ren_, mx, my);
   drawButton(ren_, newGameBtn_, newGameBtn_.hit(mx, my));
   suggestBtn_.label = showSuggest_ ? "SUGGEST  ON" : "SUGGEST  OFF";
   drawButton(ren_, suggestBtn_, suggestBtn_.hit(mx, my));
@@ -738,12 +748,12 @@ int App::run() {
     SDL_Log("CreateRenderer failed: %s", SDL_GetError());
     return 1;
   }
-#ifndef __EMSCRIPTEN__
-  // Draw in WIN_W x WIN_H logical coordinates but render at the display's
-  // true pixel density - the fix for soft, DPI-upscaled output.
-  float density = SDL_GetWindowPixelDensity(win_);
-  if (density > 1.0f) SDL_SetRenderScale(ren_, density, density);
-#endif
+  // The game is drawn in a fixed WIN_W x WIN_H coordinate space; the renderer
+  // scales and letterboxes that to whatever size the window or canvas really
+  // is.  This makes it render fully (never clipped) at any window size - on a
+  // phone, in a resized window - and crisply on high-DPI displays.
+  SDL_SetRenderLogicalPresentation(ren_, WIN_W, WIN_H,
+                                   SDL_LOGICAL_PRESENTATION_LETTERBOX);
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
   buildGlyphs(ren_);                     // upload the embedded font atlas
@@ -790,6 +800,8 @@ void App::frameStep() {
       running_ = false;
     } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                e.button.button == SDL_BUTTON_LEFT) {
+      // Convert window pixels to the logical coordinate space.
+      SDL_ConvertEventToRenderCoordinates(ren_, &e);
       onClick(e.button.x, e.button.y);
     } else if (e.type == SDL_EVENT_KEY_DOWN) {
       if (e.key.key == SDLK_ESCAPE) {
