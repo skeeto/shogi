@@ -714,36 +714,36 @@ int App::run() {
     SDL_Log("SDL_Init failed: %s", SDL_GetError());
     return 1;
   }
+  // High pixel density is requested only on native: SDL3's Emscripten backend
+  // mis-manages the canvas CSS size when the flag is set, so the web build
+  // keeps the plain, known-good canvas sizing.
+#ifdef __EMSCRIPTEN__
+  win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H, 0);
+#else
   win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H,
                           SDL_WINDOW_HIGH_PIXEL_DENSITY);
+#endif
   if (!win_) {
     SDL_Log("CreateWindow failed: %s", SDL_GetError());
     return 1;
   }
 #ifdef __EMSCRIPTEN__
-  // SDL3's Emscripten backend sizes the window from the canvas's CSS box,
-  // which may not be laid out yet at startup - pin the canvas before the
-  // renderer is created.  The backing store is scaled by the device pixel
-  // ratio so the picture is sharp on high-DPI screens, not browser-upscaled.
-  double dpr = emscripten_get_device_pixel_ratio();
-  if (dpr < 1.0) dpr = 1.0;
+  // SDL3's Emscripten backend reads the canvas's (possibly not-yet-laid-out)
+  // CSS box at startup; pin the canvas before the renderer is created.
+  emscripten_set_canvas_element_size("#canvas", WIN_W, WIN_H);
   SDL_SetWindowSize(win_, WIN_W, WIN_H);
-  emscripten_set_canvas_element_size("#canvas", int(WIN_W * dpr + 0.5),
-                                     int(WIN_H * dpr + 0.5));
 #endif
   ren_ = SDL_CreateRenderer(win_, nullptr);
   if (!ren_) {
     SDL_Log("CreateRenderer failed: %s", SDL_GetError());
     return 1;
   }
+#ifndef __EMSCRIPTEN__
   // Draw in WIN_W x WIN_H logical coordinates but render at the display's
   // true pixel density - the fix for soft, DPI-upscaled output.
-#ifdef __EMSCRIPTEN__
-  float density = float(dpr);
-#else
   float density = SDL_GetWindowPixelDensity(win_);
-#endif
   if (density > 1.0f) SDL_SetRenderScale(ren_, density, density);
+#endif
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
   buildGlyphs(ren_);                     // upload the embedded font atlas
