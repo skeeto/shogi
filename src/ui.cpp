@@ -29,7 +29,13 @@ constexpr int BOARD_PX = 9 * CELL;
 constexpr int HAND_W = 188, HAND_EH = 74;
 constexpr int WHITE_HAND_X = 44, BLACK_HAND_X = 786;
 constexpr int WBAR_X = 18, BBAR_X = 990, BAR_W = 16;
-constexpr Uint64 THINK_MS = 4000;          // computer search time per move
+// Computer move timing: think at least MIN_THINK_MS, then until MIN_PLAYOUTS
+// playouts have been searched from the position, but never past MAX_THINK_MS.
+// On a fast machine MIN_THINK_MS governs; on a slow one MAX_THINK_MS does.
+// MIN_PLAYOUTS is matched to MAX_NODES - search saturates once the tree fills.
+constexpr int    MIN_PLAYOUTS = 700000;
+constexpr Uint64 MIN_THINK_MS = 4000;
+constexpr Uint64 MAX_THINK_MS = 10000;
 
 struct RGBA { Uint8 r, g, b, a; };
 
@@ -850,10 +856,16 @@ void App::frameStep() {
     if (!thinking_) {
       thinking_ = true;
       thinkStart_ = SDL_GetTicks();
-    } else if (SDL_GetTicks() - thinkStart_ >= THINK_MS) {
-      Move mv = engine_.stats().bestMove;
-      if (mv.isNull() && !legal_.empty()) mv = legal_[0];
-      if (!mv.isNull()) applyMove(mv);
+    } else {
+      Uint64 elapsed = SDL_GetTicks() - thinkStart_;
+      bool done = elapsed >= MAX_THINK_MS ||
+                  (elapsed >= MIN_THINK_MS &&
+                   engine_.visits() >= MIN_PLAYOUTS);
+      if (done) {
+        Move mv = engine_.stats().bestMove;
+        if (mv.isNull() && !legal_.empty()) mv = legal_[0];
+        if (!mv.isNull()) applyMove(mv);
+      }
     }
   }
 
