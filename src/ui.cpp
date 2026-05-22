@@ -174,29 +174,78 @@ int kanjiIndex(Piece pc) {
   }
 }
 
-// Draw a shogi piece as a pentagon tile pointing toward the enemy.
+// --- Piece tiles: anti-aliased pentagon textures built once at startup ------
+SDL_Texture* g_tileOuter = nullptr;    // full pentagon  (border colour)
+SDL_Texture* g_tileInner = nullptr;    // inset pentagon (face colour)
+
+float segDist(float px, float py, float ax, float ay, float bx, float by) {
+  float vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
+  float c = vx * vx + vy * vy;
+  float t = c > 0 ? std::clamp((wx * vx + wy * vy) / c, 0.f, 1.f) : 0.f;
+  float dx = px - (ax + t * vx), dy = py - (ay + t * vy);
+  return std::sqrt(dx * dx + dy * dy);
+}
+bool pointInPoly(float px, float py, const float* xs, const float* ys, int n) {
+  bool in = false;
+  for (int i = 0, j = n - 1; i < n; j = i++)
+    if (((ys[i] > py) != (ys[j] > py)) &&
+        (px < (xs[j] - xs[i]) * (py - ys[i]) / (ys[j] - ys[i]) + xs[i]))
+      in = !in;
+  return in;
+}
+// Build the pentagon silhouette and inset-face masks from a signed distance
+// field, so both the outline and the border edge are anti-aliased.  The masks
+// are downscaled when drawn, which keeps the edges smooth.
+void buildTileTextures(SDL_Renderer* r) {
+  const int S = 128;
+  const float border = 5.0f, aa = 1.3f;             // in tile pixels
+  float mx = 0.10f * S, my = 0.07f * S;
+  float L = mx, R = S - mx, T = my, B = S - my;
+  float sh = (B - T) * 0.34f, in = (R - L) * 0.08f;
+  float xs[5] = {S * 0.5f, R, R - in, L + in, L};   // up-pointing pentagon
+  float ys[5] = {T, T + sh, B, B, T + sh};
+  std::vector<uint8_t> outer(size_t(S) * S * 4), inner(size_t(S) * S * 4);
+  for (int yy = 0; yy < S; ++yy)
+    for (int xx = 0; xx < S; ++xx) {
+      float fx = xx + 0.5f, fy = yy + 0.5f, d = 1e9f;
+      for (int e = 0; e < 5; ++e)
+        d = std::min(d, segDist(fx, fy, xs[e], ys[e], xs[(e + 1) % 5],
+                                ys[(e + 1) % 5]));
+      float sd = pointInPoly(fx, fy, xs, ys, 5) ? d : -d;   // + inside
+      float oc = std::clamp(0.5f + sd / aa, 0.f, 1.f);
+      float ic = std::clamp(0.5f + (sd - border) / aa, 0.f, 1.f);
+      int i = (yy * S + xx) * 4;
+      outer[i] = outer[i + 1] = outer[i + 2] = 255;
+      inner[i] = inner[i + 1] = inner[i + 2] = 255;
+      outer[i + 3] = uint8_t(oc * 255 + 0.5f);
+      inner[i + 3] = uint8_t(ic * 255 + 0.5f);
+    }
+  auto mk = [&](const std::vector<uint8_t>& d) {
+    SDL_Texture* t = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32,
+                                       SDL_TEXTUREACCESS_STATIC, S, S);
+    SDL_UpdateTexture(t, nullptr, d.data(), S * 4);
+    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(t, SDL_SCALEMODE_LINEAR);
+    return t;
+  };
+  g_tileOuter = mk(outer);
+  g_tileInner = mk(inner);
+}
+
+// Draw a shogi piece: an anti-aliased pentagon tile pointing toward the enemy,
+// with the piece kanji (red when promoted).
 void drawPiece(SDL_Renderer* r, float x, float y, float w, float h, Piece pc,
                bool selected) {
   bool up = colorOf(pc) == BLACK;          // Black sits at the bottom
-  float mx = w * 0.10f, my = h * 0.07f;
-  float L = x + mx, R = x + w - mx, T = y + my, B = y + h - my;
-  float cx = (L + R) / 2.f, sh = (B - T) * 0.34f, in = (R - L) * 0.08f;
-  SDL_FPoint pts[5];
-  if (up) {
-    pts[0] = {cx, T};            pts[1] = {R, T + sh};
-    pts[2] = {R - in, B};        pts[3] = {L + in, B};
-    pts[4] = {L, T + sh};
-  } else {
-    pts[0] = {cx, B};            pts[1] = {R, B - sh};
-    pts[2] = {R - in, T};        pts[3] = {L + in, T};
-    pts[4] = {L, B - sh};
-  }
-  RGBA tile = up ? RGBA{244, 212, 150, 255} : RGBA{236, 226, 200, 255};
-  if (selected) tile = RGBA{252, 236, 132, 255};
-  fillPoly(r, pts, 5, tile);
-  setColor(r, RGBA{62, 44, 18, 255});
-  for (int i = 0; i < 5; ++i)
-    SDL_RenderLine(r, pts[i].x, pts[i].y, pts[(i + 1) % 5].x, pts[(i + 1) % 5].y);
+  float cx = x + w / 2.f;
+  SDL_FRect dst{x, y, w, h};
+  SDL_FlipMode flip = up ? SDL_FLIP_NONE : SDL_FLIP_VERTICAL;
+  RGBA face = selected ? RGBA{252, 236, 132, 255}
+              : up ? RGBA{244, 212, 150, 255} : RGBA{236, 226, 200, 255};
+  SDL_SetTextureColorMod(g_tileOuter, 62, 44, 18);          // border
+  SDL_RenderTextureRotated(r, g_tileOuter, nullptr, &dst, 0.0, nullptr, flip);
+  SDL_SetTextureColorMod(g_tileInner, face.r, face.g, face.b);
+  SDL_RenderTextureRotated(r, g_tileInner, nullptr, &dst, 0.0, nullptr, flip);
 
   // Kanji glyph, in red when promoted.  White's pieces face the other way, so
   // the glyph is rotated 180 degrees - just like a real shogi board.
@@ -698,6 +747,7 @@ int App::run() {
   SDL_SetRenderVSync(ren_, 1);
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
   buildGlyphs(ren_);                     // upload the embedded font atlas
+  buildTileTextures(ren_);               // and the anti-aliased piece tiles
 
   initZobrist();
 
