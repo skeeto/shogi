@@ -25,6 +25,7 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 |------|----------------|
 | `src/board.{hpp,cpp}` | Rules, move generation, evaluation, quiescence |
 | `src/mcts.{hpp,cpp}`  | Thread-safe PUCT MCTS over a shared tree |
+| `src/mate.{hpp,cpp}`  | df-pn proof-number checkmate (tsume) search |
 | `src/engine.{hpp,cpp}`| Worker-thread pool driving the search |
 | `src/ui.{hpp,cpp}`    | SDL3 rendering, input, game flow |
 | `src/glyphs.hpp`      | Embedded glyph atlas (ASCII + kanji), generated |
@@ -48,7 +49,9 @@ materialised lazily — PUCT ranges over both the realised children and the
 not-yet-realised moves, so the search never spends an evaluation on a move it
 would not explore. An MCTS-Solver propagates proven win/loss/draw values up
 the tree, with mate distance so it plays the shortest forced win, and stops
-the search once the root is proven. Sennichite (fourfold repetition) and
+the search once the root is proven. After each (re)root one worker also runs
+a bounded df-pn proof-number search for a forced mate on the root, catching
+mates the sampling search can miss. Sennichite (fourfold repetition) and
 perpetual check are detected from the game history passed to `setPosition` /
 `advance`. The tree is reused across moves via `MCTS::advance` /
 `Engine::advance`.
@@ -61,7 +64,7 @@ if perft drifts.
 
 # Test & measurement harnesses
 
-Six standalone programs under `test/`. They are how engine changes are
+Seven standalone programs under `test/`. They are how engine changes are
 verified for correctness and for *strength* — read this before tuning the AI.
 
 ## `test/perft.cpp` — correctness gate
@@ -71,7 +74,7 @@ Move-generation regression + an MCTS smoke test. Run after **every** change to
 
 ```sh
 g++ -O2 -std=c++17 -Isrc -pthread \
-    test/perft.cpp src/board.cpp src/mcts.cpp src/engine.cpp -o build/perft
+    test/perft.cpp src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp -o build/perft
 ./build/perft
 ```
 
@@ -111,8 +114,21 @@ change to the MCTS-Solver or repetition handling.
 
 ```sh
 g++ -O2 -std=c++17 -Isrc -pthread \
-    test/tactics.cpp src/board.cpp src/mcts.cpp src/engine.cpp -o build/tactics
+    test/tactics.cpp src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp -o build/tactics
 ./build/tactics
+```
+
+## `test/mate_test.cpp` — df-pn mate-solver differential test
+
+Cross-checks `dfpnMate` (the proof-number search) against a brute-force
+AND/OR reference over thousands of random self-play positions: df-pn must
+never claim a mate the reference cannot confirm, nor miss a shallow one.
+Run after any change to `mate.cpp`.
+
+```sh
+g++ -O2 -std=c++17 -Isrc \
+    test/mate_test.cpp src/board.cpp src/mate.cpp -o build/mate_test
+./build/mate_test
 ```
 
 ## `test/selfplay.cpp` — A/B strength match vs. the baseline
@@ -123,7 +139,7 @@ primary "did the engine get stronger" measurement.
 
 ```sh
 g++ -O2 -std=c++17 -Isrc -Itest -pthread \
-    test/selfplay.cpp src/board.cpp src/mcts.cpp src/engine.cpp \
+    test/selfplay.cpp src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp \
     test/baseline/board.cpp test/baseline/mcts.cpp test/baseline/engine.cpp \
     -o build/selfplay
 ./build/selfplay [games] [playout-budget-per-move]      # default: 30 2500
@@ -174,7 +190,7 @@ for f in board mcts engine; do for e in hpp cpp; do \
   git show <commit>:src/$f.$e \
     | sed 's/namespace shogi/namespace shogiprev/g' > test/prev/$f.$e; done; done
 g++ -O2 -std=c++17 -Isrc -Itest -pthread test/abprev.cpp \
-    src/board.cpp src/mcts.cpp src/engine.cpp \
+    src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp \
     test/prev/board.cpp test/prev/mcts.cpp test/prev/engine.cpp -o build/abprev
 ./build/abprev [games] [playout-budget]
 ```
@@ -186,7 +202,7 @@ values to tune the PUCT exploration constant.
 
 ```sh
 g++ -O2 -std=c++17 -Isrc -pthread \
-    test/tune.cpp src/board.cpp src/mcts.cpp src/engine.cpp -o build/tune
+    test/tune.cpp src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp -o build/tune
 ./build/tune [games] [playout-budget] [cpuctA] [cpuctB]   # default: 24 4000 3.0 2.0
 ```
 
