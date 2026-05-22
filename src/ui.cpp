@@ -323,6 +323,7 @@ class App {
   void renderResult();
 
   void frameStep();                    // one main-loop iteration
+  void syncCanvasSize();               // web: fit canvas to viewport (no-op native)
 #ifdef __EMSCRIPTEN__
   static void frameThunk(void* self);  // emscripten main-loop trampoline
 #endif
@@ -337,6 +338,7 @@ class App {
   Screen screen_ = SCR_MENU;
   Mode mode_ = MODE_HVC;
   bool running_ = true;
+  int  webCssW_ = 0, webCssH_ = 0;     // last canvas CSS size synced (web)
   bool human_[2] = {true, true};
 
   Position pos_;
@@ -724,11 +726,9 @@ int App::run() {
     SDL_Log("SDL_Init failed: %s", SDL_GetError());
     return 1;
   }
-  // High pixel density is requested only on native: SDL3's Emscripten backend
-  // mis-manages the canvas CSS size when the flag is set, so the web build
-  // keeps the plain, known-good canvas sizing.
 #ifdef __EMSCRIPTEN__
-  win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H, 0);
+  win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H,
+                          SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE);
 #else
   win_ = SDL_CreateWindow("Shogi - MCTS", WIN_W, WIN_H,
                           SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -737,12 +737,7 @@ int App::run() {
     SDL_Log("CreateWindow failed: %s", SDL_GetError());
     return 1;
   }
-#ifdef __EMSCRIPTEN__
-  // SDL3's Emscripten backend reads the canvas's (possibly not-yet-laid-out)
-  // CSS box at startup; pin the canvas before the renderer is created.
-  emscripten_set_canvas_element_size("#canvas", WIN_W, WIN_H);
-  SDL_SetWindowSize(win_, WIN_W, WIN_H);
-#endif
+  syncCanvasSize();   // web: fit the canvas to the viewport at device density
   ren_ = SDL_CreateRenderer(win_, nullptr);
   if (!ren_) {
     SDL_Log("CreateRenderer failed: %s", SDL_GetError());
@@ -791,9 +786,37 @@ int App::run() {
 void App::frameThunk(void* self) { static_cast<App*>(self)->frameStep(); }
 #endif
 
+// Web: keep the canvas a WIN_W:WIN_H box fitted to the viewport, with the
+// backing store at device-pixel resolution (CSS size x devicePixelRatio) so
+// the picture is sharp.  SDL owns the CSS size (via SDL_SetWindowSize); this
+// owns the backing store (via emscripten_set_canvas_element_size).  No-op on
+// native.  Cheap, and only acts when the viewport actually changed.
+void App::syncCanvasSize() {
+#ifdef __EMSCRIPTEN__
+  int vw = EM_ASM_INT({ return window.innerWidth | 0; });
+  int vh = EM_ASM_INT({ return window.innerHeight | 0; });
+  if (vw < 1 || vh < 1) return;
+  double s = double(vw) / WIN_W;
+  if (double(vh) / WIN_H < s) s = double(vh) / WIN_H;   // fit the viewport
+  int cssW = int(WIN_W * s), cssH = int(WIN_H * s);
+  if (cssW == webCssW_ && cssH == webCssH_) return;     // unchanged
+  webCssW_ = cssW;
+  webCssH_ = cssH;
+  double dpr = emscripten_get_device_pixel_ratio();
+  if (dpr < 1.0) dpr = 1.0;
+  emscripten_set_canvas_element_size("#canvas", int(cssW * dpr + 0.5),
+                                     int(cssH * dpr + 0.5));   // backing store
+  SDL_SetWindowSize(win_, cssW, cssH);                         // CSS size
+  if (ren_)
+    SDL_SetRenderLogicalPresentation(ren_, WIN_W, WIN_H,
+                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+#endif
+}
+
 // One iteration of the main loop: input, search progress, computer move,
 // render.  Driven by a plain while loop natively, by the browser on the web.
 void App::frameStep() {
+  syncCanvasSize();   // track viewport resize / rotation (web)
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
     if (e.type == SDL_EVENT_QUIT) {

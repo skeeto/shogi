@@ -11,17 +11,14 @@
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
   }
-  canvas {
-    background: #000; border: 1px solid #333; outline: none;
-    display: block;
-  }
+  /* The C++ side sizes the canvas: SDL sets its CSS (display) size, and
+     syncCanvasSize() sets the backing store to device resolution.  The page
+     only needs to centre it. */
+  canvas { display: block; background: #000; outline: none; }
   #status { padding: 10px; font-size: 14px; color: #7f7f88; }
 </style>
 </head>
 <body>
-<!-- The width/height attributes give the canvas an intrinsic size; without
-     them the flex layout collapses it and SDL locks onto a tiny render
-     target.  They must match WIN_W/WIN_H in src/ui.cpp. -->
 <canvas id="canvas" width="1024" height="720"
         tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
 <div id="status">loading...</div>
@@ -33,31 +30,13 @@
 
 <script>
   var statusEl = document.getElementById('status');
-  var canvasEl = document.getElementById('canvas');
   var Module = {
-    canvas: canvasEl,
+    canvas: document.getElementById('canvas'),
     setStatus: function (t) { statusEl.textContent = t; },
     print: function (t) { console.log(t); },
     printErr: function (t) { console.error(t); },
     onRuntimeInitialized: function () { statusEl.textContent = ''; },
   };
-
-  // Scale the canvas to fit the viewport, keeping the 1024x720 aspect ratio.
-  // SDL3/Emscripten pins an explicit pixel size onto the canvas with
-  // `!important`, which no stylesheet can override - so re-fit it from script
-  // and re-apply via a MutationObserver whenever Emscripten changes it.
-  function fitCanvas() {
-    var s = Math.min(window.innerWidth / 1024,
-                     (window.innerHeight - 30) / 720, 1);
-    var w = Math.round(1024 * s) + 'px', h = Math.round(720 * s) + 'px';
-    if (canvasEl.style.width === w && canvasEl.style.height === h) return;
-    canvasEl.style.setProperty('width', w, 'important');
-    canvasEl.style.setProperty('height', h, 'important');
-  }
-  new MutationObserver(fitCanvas).observe(canvasEl,
-    { attributes: true, attributeFilter: ['style', 'width', 'height'] });
-  window.addEventListener('resize', fitCanvas);
-  fitCanvas();
 
   // Load the multi-threaded build when the browser gives us a cross-origin
   // isolated context (SharedArrayBuffer); otherwise the single-threaded one.
