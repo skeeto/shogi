@@ -21,18 +21,18 @@ static void check(bool ok, const char* name, const std::string& detail) {
   if (!ok) ++failures;
 }
 
-// Search `p` for `budget` playouts (wall-clock capped) and return the move.
-static Move searchMove(const Position& p, int budget) {
+// Search `p` until `budget` playouts or the position is solved.
+static MCTS::Stats search(const Position& p, int budget) {
   Engine eng;
   eng.setPosition(p);
   auto t0 = std::chrono::steady_clock::now();
-  while (eng.visits() < budget) {
+  while (eng.visits() < budget && !eng.solved()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     if (std::chrono::steady_clock::now() - t0 > std::chrono::seconds(20)) break;
   }
-  Move m = eng.stats().bestMove;
+  MCTS::Stats st = eng.stats();
   eng.stop();
-  return m;
+  return st;
 }
 
 // True if `m` checkmates the opponent (leaves them in check with no reply).
@@ -45,10 +45,15 @@ static bool isMatingMove(const Position& p, Move m) {
   return reply.empty() && inCheck(c, c.stm());
 }
 
-// Assert the engine finds a mate-in-1 from `p`.
+// Assert the engine finds a mate-in-1 from `p` AND proves the win: the
+// MCTS-Solver reports an exact 1.0 / 0.0, which an un-proven win never does.
 static void mateInOne(const char* name, const Position& p) {
-  Move m = searchMove(p, 40000);
-  check(isMatingMove(p, m), name, "engine played " + moveToString(m));
+  MCTS::Stats st = search(p, 40000);
+  bool mates  = isMatingMove(p, st.bestMove);
+  bool proven = st.blackWinProb == ((p.stm() == BLACK) ? 1.0 : 0.0);
+  check(mates && proven, name,
+        "played " + moveToString(st.bestMove) +
+        (mates ? "" : " NOT-MATE") + (proven ? " proven" : " UNPROVEN"));
 }
 
 int main() {

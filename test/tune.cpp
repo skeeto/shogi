@@ -23,8 +23,13 @@ using namespace shogi;
 template <class Eng>
 static void waitBudget(Eng& e, int budget) {
   auto t0 = std::chrono::steady_clock::now();
+  int last = -1, stalls = 0;
   while (e.visits() < budget) {
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    int v = e.visits();
+    if (v == last) {                        // no progress: the position solved
+      if (++stalls > 25) break;
+    } else { last = v; stalls = 0; }
     if (std::chrono::steady_clock::now() - t0 > std::chrono::seconds(30)) break;
   }
 }
