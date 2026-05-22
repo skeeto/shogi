@@ -9,16 +9,16 @@
 //
 // Refresh the snapshot to the pre-change commit before measuring:
 //   mkdir -p test/prev
-//   for f in board mcts engine; do for e in hpp cpp; do \
+//   for f in board mate mcts engine; do for e in hpp cpp; do \
 //     git show <commit>:src/$f.$e \
 //       | sed 's/namespace shogi/namespace shogiprev/g' > test/prev/$f.$e; \
 //   done; done
 //
 // Build:
 //   g++ -O2 -std=c++17 -Isrc -Itest -pthread test/abprev.cpp \
-//       src/board.cpp src/mcts.cpp src/engine.cpp \
-//       test/prev/board.cpp test/prev/mcts.cpp test/prev/engine.cpp \
-//       -o build/abprev
+//       src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp \
+//       test/prev/board.cpp test/prev/mate.cpp test/prev/mcts.cpp \
+//       test/prev/engine.cpp -o build/abprev
 //
 // Run:  ./build/abprev [games] [playout-budget]
 #include <chrono>

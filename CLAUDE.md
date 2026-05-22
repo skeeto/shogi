@@ -64,7 +64,7 @@ if perft drifts.
 
 # Test & measurement harnesses
 
-Seven standalone programs under `test/`. They are how engine changes are
+Eight standalone programs under `test/`. They are how engine changes are
 verified for correctness and for *strength* — read this before tuning the AI.
 
 ## `test/perft.cpp` — correctness gate
@@ -186,12 +186,13 @@ every game, this is the tool for measuring an *incremental* change. Refresh
 `test/prev/` to the pre-change commit first:
 
 ```sh
-for f in board mcts engine; do for e in hpp cpp; do \
+for f in board mate mcts engine; do for e in hpp cpp; do \
   git show <commit>:src/$f.$e \
     | sed 's/namespace shogi/namespace shogiprev/g' > test/prev/$f.$e; done; done
 g++ -O2 -std=c++17 -Isrc -Itest -pthread test/abprev.cpp \
     src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp \
-    test/prev/board.cpp test/prev/mcts.cpp test/prev/engine.cpp -o build/abprev
+    test/prev/board.cpp test/prev/mate.cpp test/prev/mcts.cpp \
+    test/prev/engine.cpp -o build/abprev
 ./build/abprev [games] [playout-budget]
 ```
 
@@ -219,6 +220,21 @@ self-play tuning harness must do the same.
 Output: `A wins - B wins - draws` and `A score %`. Reference result (50 games,
 budget 4000): `cpuct` 1.0 / 1.5 / 2.0 are within noise of one another and 2.0
 beats 3.0 (62%), so the default stays 2.0.
+
+## `test/tune_eval.cpp` — self-play evaluation tuning
+
+Fits the eval's 13 piece values (`evalPieceBase` / `evalPiecePromo`) to the
+engine's own play.  It plays self-play games, labels each quiet position with
+the *search* win probability for it — the game outcome is too noisy a target
+in equal-vs-equal self-play and degenerates the fit — then coordinate-descends
+the values to minimise the prediction error.  Prints the tuned values to copy
+into `board.cpp`; A/B the result with `abprev`.
+
+```sh
+g++ -O2 -std=c++17 -Isrc -pthread test/tune_eval.cpp \
+    src/board.cpp src/mate.cpp src/mcts.cpp src/engine.cpp -o build/tune_eval
+./build/tune_eval [games] [playout-budget]
+```
 
 ## Measurement notes / gotchas
 
