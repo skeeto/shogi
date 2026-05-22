@@ -43,8 +43,15 @@ pin detection so most moves skip the make-and-test. The static eval
 game-phase scaled; `evalBlackWinProb` is its logistic. `evalLeaf` runs a
 capture-only alpha-beta quiescence (`qsearch`) before the static eval — this
 is what the MCTS scores leaves with (no random rollouts). MCTS uses PUCT with
-heuristic move priors; `cpuct` is a tunable field (default 2.0). The tree is
-reused across moves via `MCTS::advance` / `Engine::advance`.
+heuristic move priors; `cpuct` is a tunable field (default 2.0). Children are
+materialised lazily — PUCT ranges over both the realised children and the
+not-yet-realised moves, so the search never spends an evaluation on a move it
+would not explore. An MCTS-Solver propagates proven win/loss/draw values up
+the tree, with mate distance so it plays the shortest forced win, and stops
+the search once the root is proven. Sennichite (fourfold repetition) and
+perpetual check are detected from the game history passed to `setPosition` /
+`advance`. The tree is reused across moves via `MCTS::advance` /
+`Engine::advance`.
 
 **Hard invariant:** move generation must keep `perft(1..4) =
 30 / 900 / 25470 / 719731`. Any change touching `board.cpp` move code is wrong
@@ -54,7 +61,7 @@ if perft drifts.
 
 # Test & measurement harnesses
 
-Four standalone programs under `test/`. They are how engine changes are
+Six standalone programs under `test/`. They are how engine changes are
 verified for correctness and for *strength* — read this before tuning the AI.
 
 ## `test/perft.cpp` — correctness gate
@@ -73,8 +80,8 @@ Checks, in order:
   `30 / 900 / 25470 / 719731`. These are known-correct Shogi node counts;
   a mismatch means move generation (drops, promotion, pins, legality) broke.
 - **MCTS smoke** — searches 1 s, expects > 100 playouts and prints the
-  playout rate and best move. A healthy run is tens of thousands of playouts
-  and a normal developing move.
+  playout rate and best move. A healthy run is hundreds of thousands of
+  playouts and a normal developing move.
 - **Tree-reuse smoke** — calls `Engine::advance` with the best move and
   confirms the subtree's accumulated visits carried over (not restarted).
 
@@ -94,6 +101,19 @@ worse than a home king; extra material raises the win probability; the eval is
 `1-x`, which validates the `80 - s` PST mirroring); the king-safety penalty
 fades to nothing in a bare-king endgame; enemy pressure near the king lowers
 the score.
+
+## `test/tactics.cpp` — solver / tactical checks
+
+Asserts the search proves forced wins (an exact `1.0` / `0.0` win probability,
+which an un-proven evaluation never reaches), scores a fourfold repetition as
+a draw, and a perpetual check as a loss for the checking side. Run after any
+change to the MCTS-Solver or repetition handling.
+
+```sh
+g++ -O2 -std=c++17 -Isrc -pthread \
+    test/tactics.cpp src/board.cpp src/mcts.cpp src/engine.cpp -o build/tactics
+./build/tactics
+```
 
 ## `test/selfplay.cpp` — A/B strength match vs. the baseline
 
@@ -126,8 +146,10 @@ How it works:
   percentage, an approximate Elo delta (`-400*log10(1/score - 1)`), and how
   many games each side walked its king off the back two ranks before ply 40.
 
-Reference result (30 games, budget 2500): new `26-4-0`, 86.7%, ~+325 Elo;
-early king-walks new `0`, baseline `12`.
+Reference result (30 games, budget 2500): new `30-0-0`, 100% — the search
+rework beats this baseline every game, so `8a6430f` now only catches gross
+regressions. Use `abprev.cpp` (below) to measure an incremental change. Early
+king-walks new `0`, baseline `14`.
 
 Regenerating the baseline (only if you ever need a different reference point):
 ```sh
@@ -137,6 +159,24 @@ for f in board mcts engine; do
       > test/baseline/$f.$e
   done
 done
+```
+
+## `test/abprev.cpp` — A/B vs. a recent snapshot
+
+Like `selfplay.cpp`, but plays against a snapshot of an earlier build under
+`test/prev/` (namespace `shogiprev`) instead of the fixed `8a6430f` baseline,
+with `tune.cpp`-style random openings. Since the engine now beats `8a6430f`
+every game, this is the tool for measuring an *incremental* change. Refresh
+`test/prev/` to the pre-change commit first:
+
+```sh
+for f in board mcts engine; do for e in hpp cpp; do \
+  git show <commit>:src/$f.$e \
+    | sed 's/namespace shogi/namespace shogiprev/g' > test/prev/$f.$e; done; done
+g++ -O2 -std=c++17 -Isrc -Itest -pthread test/abprev.cpp \
+    src/board.cpp src/mcts.cpp src/engine.cpp \
+    test/prev/board.cpp test/prev/mcts.cpp test/prev/engine.cpp -o build/abprev
+./build/abprev [games] [playout-budget]
 ```
 
 ## `test/tune.cpp` — CPUCT self-play tuning
@@ -160,9 +200,9 @@ from a short random opening (2-10 random legal plies), played twice with the
 engines swapping colours. This produces varied, decisive games. Any future
 self-play tuning harness must do the same.
 
-Output: `A wins - B wins - draws` and `A score %`. Reference result (30 games,
-budget 5000): `cpuct 2.0` beat `cpuct 3.0` `13-5` with 12 draws (~63%), which
-is why the default is 2.0.
+Output: `A wins - B wins - draws` and `A score %`. Reference result (50 games,
+budget 4000): `cpuct` 1.0 / 1.5 / 2.0 are within noise of one another and 2.0
+beats 3.0 (62%), so the default stays 2.0.
 
 ## Measurement notes / gotchas
 
@@ -175,7 +215,9 @@ is why the default is 2.0.
   just draws (see `tune.cpp`).
 - A/B runs are slow (the baseline searches ~14x slower per playout); 30 games
   at budget 2500 is roughly 30 minutes. Run them in the background.
-- `waitBudget` in the harnesses caps the wait at 30 s wall-clock as a safety.
+- `waitBudget` in the harnesses caps the wait at 30 s wall-clock, and also
+  returns early once the visit count plateaus — a position the solver has
+  settled, where searching further is pointless.
 
 ## License
 
