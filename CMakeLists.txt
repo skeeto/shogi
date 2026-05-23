@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(shogi CXX)
+project(shogi VERSION 1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -69,12 +69,18 @@ add_executable(shogi WIN32
 )
 target_include_directories(shogi PRIVATE src)
 target_link_libraries(shogi PRIVATE SDL3::SDL3)
+target_compile_definitions(shogi PRIVATE SHOGI_VERSION="${PROJECT_VERSION}")
 
-# Windows: compile the gold-general application icon (src/shogi.ico) into the
-# executable.  windres locates the .ico via the src/ include path above.
+# Windows: compile the gold-general application icon (src/shogi.ico) and a
+# VERSIONINFO block (file/product version, etc.) into the executable.  The
+# .rc is configure_file()'d from src/shogi.rc.in so PROJECT_VERSION
+# substitutes cleanly, avoiding the quoting headaches of passing strings
+# through windres -D.  windres locates the .ico via the src/ include path.
 if(WIN32)
   enable_language(RC)
-  target_sources(shogi PRIVATE src/shogi.rc)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/shogi.rc.in
+                 ${CMAKE_CURRENT_BINARY_DIR}/shogi.rc @ONLY)
+  target_sources(shogi PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shogi.rc)
 endif()
 
 if(MSVC)

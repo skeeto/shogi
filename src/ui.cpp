@@ -547,6 +547,7 @@ void App::renderMenu() {
   drawTextC(ren_, WIN_W / 2, 100, 46, "SHOGI", C_TEXT);
   drawTextC(ren_, WIN_W / 2, 188, 17,
             "MULTITHREADED MONTE CARLO TREE SEARCH", C_DIM);
+  drawTextC(ren_, WIN_W / 2, 215, 14, "v" SHOGI_VERSION, C_DIM);
   float mx, my;
   mousePos(ren_, mx, my);
   for (const Button& b : menuButtons_)
