@@ -323,7 +323,8 @@ class App {
   void startGame(Mode m);
   void recomputeLegal();
   void updateResult();
-  void applyMove(const Move& m);
+  void applyMove(Move m);              // by value: recomputeLegal() can mutate
+                                       // any caller-held reference into legal_
   bool playerIsComputer(Color c) const;
 
   void onClick(float mx, float my);
@@ -393,7 +394,7 @@ void App::updateResult() {
   result_ = ONGOING;
 }
 
-void App::applyMove(const Move& m) {
+void App::applyMove(Move m) {
   lastMove_ = m;
   doMove(pos_, m);
   hashes_.push_back(pos_.hash);
