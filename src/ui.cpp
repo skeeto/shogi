@@ -745,11 +745,24 @@ bool App::init() {
     SDL_Log("SDL_Init failed: %s", SDL_GetError());
     return false;
   }
+  // Windows sizes the window in screen pixels and SDL3 is always DPI-aware
+  // there, so the unscaled WIN_W x WIN_H is physically tiny on a HiDPI
+  // display.  Pre-scale by the display's content scale.  macOS sizes windows
+  // in points (the OS handles the scaling); Emscripten resizes to fit the
+  // browser viewport (see syncCanvasSize).
+  int W = WIN_W, H = WIN_H;
+#ifdef _WIN32
+  float scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+  if (scale > 1.0f) {
+    W = int(W * scale + 0.5f);
+    H = int(H * scale + 0.5f);
+  }
+#endif
 #ifdef __EMSCRIPTEN__
-  win_ = SDL_CreateWindow("Shogi", WIN_W, WIN_H,
+  win_ = SDL_CreateWindow("Shogi", W, H,
                           SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE);
 #else
-  win_ = SDL_CreateWindow("Shogi", WIN_W, WIN_H,
+  win_ = SDL_CreateWindow("Shogi", W, H,
                           SDL_WINDOW_HIGH_PIXEL_DENSITY);
 #endif
   if (!win_) {
