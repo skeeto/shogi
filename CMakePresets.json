@@ -13,12 +13,29 @@
         "CMAKE_C_FLAGS": "-march=x86-64-v2",
         "CMAKE_CXX_FLAGS": "-march=x86-64-v2"
       }
+    },
+    {
+      "name": "mingw",
+      "displayName": "mingw-w64 cross (Windows GCC, static)",
+      "description": "Cross-compile a static Windows .exe from a Unix host with mingw-w64 installed (e.g. `brew install mingw-w64`).  Same target as w64devkit; useful for verifying Windows-only build pieces without leaving the host.",
+      "binaryDir": "${sourceDir}/build-mingw",
+      "toolchainFile": "${sourceDir}/cmake/mingw-w64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SHOGI_STATIC": "ON",
+        "CMAKE_C_FLAGS": "-march=x86-64-v2",
+        "CMAKE_CXX_FLAGS": "-march=x86-64-v2"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "w64devkit",
       "configurePreset": "w64devkit"
+    },
+    {
+      "name": "mingw",
+      "configurePreset": "mingw"
     }
   ]
 }

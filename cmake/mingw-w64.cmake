@@ -1,0 +1,16 @@
+# mingw-w64.cmake - cross-compile to 64-bit Windows from a Unix-like host
+# with mingw-w64 installed (e.g. `brew install mingw-w64` on macOS).
+# Use via:  cmake --preset mingw  (or -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake).
+set(CMAKE_SYSTEM_NAME      Windows)
+set(CMAKE_SYSTEM_PROCESSOR x86_64)
+
+set(CMAKE_C_COMPILER   x86_64-w64-mingw32-gcc)
+set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++)
+set(CMAKE_RC_COMPILER  x86_64-w64-mingw32-windres)
+
+# Cross builds: never run host programs as build artefacts.  All libraries
+# come from the mingw sysroot or the fetched SDL3 sources, not from the host.
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
