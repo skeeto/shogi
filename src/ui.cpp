@@ -731,6 +731,7 @@ void App::render() {
 
   float mx, my;
   mousePos(ren_, mx, my);
+  newGameBtn_.label = (result_ == ONGOING) ? "RESIGN" : "MENU";
   drawButton(ren_, newGameBtn_, newGameBtn_.hit(mx, my));
   suggestBtn_.label = showSuggest_ ? "SUGGEST  ON" : "SUGGEST  OFF";
   drawButton(ren_, suggestBtn_, suggestBtn_.hit(mx, my));
