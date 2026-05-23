@@ -552,7 +552,6 @@ void App::renderMenu() {
     drawButton(ren_, b, b.hit(mx, my));
   drawTextC(ren_, WIN_W / 2, 624, 17,
             "ENGINE THREADS  " + std::to_string(engine_.threadCount()), C_DIM);
-  drawTextC(ren_, WIN_W / 2, 660, 17, "CLICK A MODE TO BEGIN", C_DIM);
 }
 
 void App::renderBoard() {
