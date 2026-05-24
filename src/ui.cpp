@@ -16,6 +16,9 @@
 #include <string>
 #include <vector>
 
+#include <cstdio>
+#include <cstring>
+
 #include "board.hpp"
 #include "engine.hpp"
 #include "glyphs.hpp"
@@ -56,6 +59,118 @@ constexpr Uint64 MIN_THINK_MS     = 4000;
 constexpr Uint64 MAX_THINK_MS     = 10000;
 constexpr Uint64 MAX_THINK_MS_CVC = 40000;
 constexpr Uint64 PLATEAU_MS       = 250;
+
+// --- Save / restore --------------------------------------------------------
+//
+// Persist mode + position + hashes + result + lastMove after every move so a
+// browser refresh or a fresh launch picks up where the user left off.  The
+// search tree is *not* saved - any in-flight think restarts from the loaded
+// root.  Game-over states are kept too, so reloading on a finished game
+// lands back in the result screen for study.
+//
+// Storage:
+//   web      localStorage["shogi-save"], hex-encoded (string-only API)
+//   native   one file at SDL_GetPrefPath("nullprogram", "shogi") + "save.dat"
+//
+// Format (all little-endian, no padding between fields):
+//   u32  magic        'SHGS'
+//   u32  version      SAVE_VERSION
+//   u8   mode         Mode (0..3)
+//   u8   result       Result (0..3)
+//   ...  pos          sizeof(Position) bytes, memcpy of pos_
+//   ...  lastMove     sizeof(Move)     bytes, memcpy of lastMove_
+//   u32  histLen      length of the hash history
+//   u64 * histLen     hashes
+//
+// If magic or version don't match on load the save is treated as absent.
+// **Bump SAVE_VERSION whenever Position or Move changes layout** - the save
+// is a raw memcpy of those PODs.
+constexpr uint32_t SAVE_MAGIC   = 0x53474853;   // 'SHGS' as little-endian u32
+constexpr uint32_t SAVE_VERSION = 1;
+
+#ifdef __EMSCRIPTEN__
+constexpr const char* SAVE_KEY = "shogi-save";
+
+void saveWrite(const std::vector<uint8_t>& b) {
+  static const char H[] = "0123456789abcdef";
+  std::string hex;
+  hex.reserve(b.size() * 2);
+  for (uint8_t x : b) { hex += H[x >> 4]; hex += H[x & 0xF]; }
+  EM_ASM({
+    try { localStorage.setItem(UTF8ToString($0), UTF8ToString($1)); } catch (e) {}
+  }, SAVE_KEY, hex.c_str());
+}
+bool saveRead(std::vector<uint8_t>& b) {
+  char* s = (char*)EM_ASM_PTR({
+    try {
+      var v = localStorage.getItem(UTF8ToString($0));
+      if (v === null) return 0;
+      var len = lengthBytesUTF8(v) + 1;
+      var p = _malloc(len);
+      stringToUTF8(v, p, len);
+      return p;
+    } catch (e) { return 0; }
+  }, SAVE_KEY);
+  if (!s) return false;
+  std::string hex(s);
+  free(s);
+  if (hex.size() % 2 != 0) return false;
+  auto nybble = [](char c) -> int {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+  };
+  b.clear();
+  b.reserve(hex.size() / 2);
+  for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+    int hi = nybble(hex[i]), lo = nybble(hex[i + 1]);
+    if (hi < 0 || lo < 0) return false;
+    b.push_back(uint8_t((hi << 4) | lo));
+  }
+  return true;
+}
+void saveClear() {
+  EM_ASM({
+    try { localStorage.removeItem(UTF8ToString($0)); } catch (e) {}
+  }, SAVE_KEY);
+}
+#else
+std::string savePath() {
+  char* base = SDL_GetPrefPath("nullprogram", "shogi");
+  if (!base) return {};
+  std::string path = std::string(base) + "save.dat";
+  SDL_free(base);
+  return path;
+}
+void saveWrite(const std::vector<uint8_t>& b) {
+  std::string path = savePath();
+  if (path.empty()) return;
+  FILE* f = std::fopen(path.c_str(), "wb");
+  if (!f) return;
+  std::fwrite(b.data(), 1, b.size(), f);
+  std::fclose(f);
+}
+bool saveRead(std::vector<uint8_t>& b) {
+  std::string path = savePath();
+  if (path.empty()) return false;
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) return false;
+  std::fseek(f, 0, SEEK_END);
+  long n = std::ftell(f);
+  std::fseek(f, 0, SEEK_SET);
+  if (n <= 0) { std::fclose(f); return false; }
+  b.assign(size_t(n), 0);
+  size_t got = std::fread(b.data(), 1, size_t(n), f);
+  std::fclose(f);
+  b.resize(got);
+  return got > 0;
+}
+void saveClear() {
+  std::string path = savePath();
+  if (!path.empty()) std::remove(path.c_str());
+}
+#endif
 
 struct RGBA { Uint8 r, g, b, a; };
 
@@ -341,6 +456,10 @@ class App {
                                        // any caller-held reference into legal_
   bool playerIsComputer(Color c) const;
 
+  void goToMenu();                     // tear down current game + drop to menu
+  void saveGame();                     // serialize state to disk / localStorage
+  bool loadGame();                     // restore state; false if nothing valid
+
   void onClick(float mx, float my);
   void onMenuClick(float mx, float my);
   void onBoardClick(int square);
@@ -427,6 +546,7 @@ void App::applyMove(Move m) {
     engine_.advance(m, pos_, hashes_);   // reuse the subtree pondered for `m`
   else
     engine_.stop();
+  saveGame();                            // checkpoint after every move
 }
 
 void App::startGame(Mode m) {
@@ -446,6 +566,108 @@ void App::startGame(Mode m) {
   recomputeLegal();
   engine_.setPosition(pos_, hashes_);
   screen_ = SCR_PLAY;
+  saveGame();                            // checkpoint the fresh game
+}
+
+// Leave the current game and return to the menu.  If the game was still in
+// progress (RESIGN), discard the save - the user explicitly bailed.  If the
+// game had ended, the save is preserved so a later reload drops back into
+// the result screen for study.
+void App::goToMenu() {
+  engine_.stop();
+  if (result_ == ONGOING) saveClear();
+  screen_ = SCR_MENU;
+}
+
+void App::saveGame() {
+  if (screen_ != SCR_PLAY) return;       // only meaningful during a game
+
+  std::vector<uint8_t> b;
+  b.reserve(32 + sizeof(Position) + sizeof(Move) + hashes_.size() * 8);
+
+  auto pushU8  = [&](uint8_t  x) { b.push_back(x); };
+  auto pushU32 = [&](uint32_t x) {
+    for (int i = 0; i < 4; ++i) b.push_back(uint8_t(x >> (8 * i)));
+  };
+  auto pushU64 = [&](uint64_t x) {
+    for (int i = 0; i < 8; ++i) b.push_back(uint8_t(x >> (8 * i)));
+  };
+  auto pushRaw = [&](const void* p, size_t n) {
+    auto* x = static_cast<const uint8_t*>(p);
+    b.insert(b.end(), x, x + n);
+  };
+
+  pushU32(SAVE_MAGIC);
+  pushU32(SAVE_VERSION);
+  pushU8(uint8_t(mode_));
+  pushU8(uint8_t(result_));
+  pushRaw(&pos_, sizeof(Position));
+  pushRaw(&lastMove_, sizeof(Move));
+  pushU32(uint32_t(hashes_.size()));
+  for (uint64_t h : hashes_) pushU64(h);
+
+  saveWrite(b);
+}
+
+bool App::loadGame() {
+  std::vector<uint8_t> b;
+  if (!saveRead(b)) return false;
+
+  const size_t fixedSize = 4 + 4 + 1 + 1 + sizeof(Position) + sizeof(Move) + 4;
+  if (b.size() < fixedSize) return false;
+
+  size_t off = 0;
+  auto popU32 = [&]() -> uint32_t {
+    uint32_t x = uint32_t(b[off])         | (uint32_t(b[off + 1]) << 8) |
+                 (uint32_t(b[off + 2]) << 16) | (uint32_t(b[off + 3]) << 24);
+    off += 4;
+    return x;
+  };
+  auto popU64 = [&]() -> uint64_t {
+    uint64_t x = 0;
+    for (int i = 0; i < 8; ++i) x |= uint64_t(b[off + i]) << (8 * i);
+    off += 8;
+    return x;
+  };
+  auto popRaw = [&](void* dst, size_t n) {
+    std::memcpy(dst, b.data() + off, n);
+    off += n;
+  };
+
+  if (popU32() != SAVE_MAGIC || popU32() != SAVE_VERSION) return false;
+  uint8_t mode   = b[off++];
+  uint8_t result = b[off++];
+  if (mode > MODE_CVC || result > DRAW) return false;
+
+  Position pos;
+  popRaw(&pos, sizeof(Position));
+  Move lastMv;
+  popRaw(&lastMv, sizeof(Move));
+
+  uint32_t histLen = popU32();
+  if (b.size() - off != size_t(histLen) * 8) return false;
+  std::vector<uint64_t> history;
+  history.reserve(histLen);
+  for (uint32_t i = 0; i < histLen; ++i) history.push_back(popU64());
+
+  // Apply to App state - parallels startGame() but doesn't reset the position.
+  mode_ = Mode(mode);
+  human_[BLACK] = (mode_ == MODE_HVH || mode_ == MODE_HVC);
+  human_[WHITE] = (mode_ == MODE_HVH || mode_ == MODE_CVH);
+  flipped_ = (mode_ == MODE_CVH);
+  pos_ = pos;
+  hashes_ = std::move(history);
+  lastMove_ = lastMv;
+  result_ = static_cast<Result>(result);
+  selSq_ = -1;
+  selHand_ = PT_NONE;
+  promoDialog_ = false;
+  thinking_ = false;
+  recomputeLegal();
+  if (result_ == ONGOING)
+    engine_.setPosition(pos_, hashes_);   // seed search; restart from zero
+  screen_ = SCR_PLAY;
+  return true;
 }
 
 // --- Geometry ---------------------------------------------------------------
@@ -529,8 +751,7 @@ void App::onClick(float mx, float my) {
     return;
   }
   if (newGameBtn_.hit(mx, my)) {
-    engine_.stop();
-    screen_ = SCR_MENU;
+    goToMenu();
     return;
   }
   if (suggestBtn_.hit(mx, my)) {
@@ -830,6 +1051,10 @@ bool App::init() {
   newGameBtn_ = Button{{float(BOARD_X), 636, 240, 46}, "MENU"};
   suggestBtn_ = Button{{float(BOARD_X + BOARD_PX - 240), 636, 240, 46},
                        "SUGGEST  ON"};
+
+  // Pick up any saved game from the previous session.  Failure (no save, or
+  // wrong magic / version) leaves the user on the menu screen.
+  loadGame();
   return true;
 }
 
@@ -879,8 +1104,7 @@ SDL_AppResult App::onEvent(SDL_Event& e) {
   } else if (e.type == SDL_EVENT_KEY_DOWN) {
     if (e.key.key == SDLK_ESCAPE) {
       if (screen_ == SCR_PLAY) {
-        engine_.stop();
-        screen_ = SCR_MENU;
+        goToMenu();
       } else {
         running_ = false;
       }
