@@ -208,18 +208,27 @@ if(NOT EMSCRIPTEN)
     install(FILES "${_shogi_tutorial_html}" DESTINATION .)
   endif()
 
-  set(CPACK_GENERATOR "ZIP")
   set(CPACK_PACKAGE_NAME "shogi")
   set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Shogi - Japanese chess with an MCTS AI")
   set(CPACK_VERBATIM_VARIABLES YES)
-  # Make Windows builds (incl. the mingw cross-build) read as "win64" rather
-  # than the verbose CMake default "Windows-AMD64".
-  if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(CPACK_SYSTEM_NAME "win64")
+  set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)   # flat layout, no extra dir
+
+  if(APPLE)
+    # Disk image - the conventional macOS distribution format.  Mounting it
+    # opens a Finder window showing Shogi.app and tutorial.html; the user
+    # drags the app to /Applications.
+    set(CPACK_GENERATOR "DragNDrop")
+    set(CPACK_DMG_VOLUME_NAME "Shogi ${PROJECT_VERSION}")
+  else()
+    # Plain ZIP for Windows (incl. the mingw cross-build) and Linux.
+    set(CPACK_GENERATOR "ZIP")
+    # Make Windows builds read as "win64" rather than the verbose CMake
+    # default "Windows-AMD64".
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+      set(CPACK_SYSTEM_NAME "win64")
+    endif()
   endif()
-  # Flat layout: shogi(.exe) and tutorial.html at the ZIP root, no extra dir.
-  set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 
   include(CPack)
 endif()
