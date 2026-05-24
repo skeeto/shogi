@@ -1,17 +1,19 @@
 // genhtml.cpp - converts docs/tutorial/tutorial.md to a single self-contained
-// build/tutorial.html, with every image base64-embedded as a data: URI.  No
-// external dependencies, no link-time deps beyond the standard library, no
-// pandoc.
+// HTML file with every image base64-embedded as a data: URI.  No external
+// dependencies, no link-time deps beyond the standard library, no pandoc.
 //
-// Build & run from the repo root:
-//   c++ -O2 -std=c++17 -o build/genhtml tools/genhtml.cpp
-//   ./build/genhtml          # writes build/tutorial.html
+// The CMake build wires this into the normal `cmake --build` pipeline (see
+// the SHOGI_BUILD_DOCS option in CMakeLists.txt), so the HTML is produced
+// automatically for every fresh build.  Cross-builds compile genhtml with
+// a separate host C++ compiler so the binary can run on the build machine.
 //
-// Unlike the other offline tools in this directory, genhtml's output is NOT
-// committed - tutorial.html is a build artefact, picked up from build/ by
-// downstream packaging (CPack, web/build.sh, etc.).  The tool is still
-// offline (not wired into CMake); run it by hand whenever tutorial.md or the
-// PNGs under docs/tutorial/img/ change.
+// To run it by hand:
+//   c++ -O2 -std=c++17 -o /tmp/genhtml tools/genhtml.cpp
+//   /tmp/genhtml /tmp/tutorial.html       # output path is mandatory
+//
+// Input paths (the markdown source and the docs/tutorial/img/ directory)
+// are resolved relative to the current working directory; run from the
+// repo root if invoking manually.
 //
 // The markdown subset is intentionally narrow (everything tutorial.md uses,
 // nothing it doesn't):
@@ -566,8 +568,15 @@ const char* CSS = R"CSS(
 
 }  // namespace
 
-int main() {
-  std::printf("genhtml: docs/tutorial/tutorial.md -> build/tutorial.html\n");
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::fprintf(stderr, "usage: %s OUTPUT_HTML_PATH\n",
+                 argc > 0 ? argv[0] : "genhtml");
+    return 1;
+  }
+  const std::string outPath = argv[1];
+
+  std::printf("genhtml: docs/tutorial/tutorial.md -> %s\n", outPath.c_str());
 
   std::string md = readText("docs/tutorial/tutorial.md");
   auto blocks = parseBlocks(md);
@@ -590,7 +599,7 @@ int main() {
   html += body;
   html += "</main>\n</body>\n</html>\n";
 
-  writeText("build/tutorial.html", html);
-  std::printf("wrote build/tutorial.html (%zu bytes)\n", html.size());
+  writeText(outPath, html);
+  std::printf("wrote %s (%zu bytes)\n", outPath.c_str(), html.size());
   return 0;
 }

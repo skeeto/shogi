@@ -32,28 +32,31 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
 | `tools/genicon.cpp`   | Generator for `src/shogi.ico` + `src/icon.hpp` (offline) |
 | `tools/gentut.cpp`    | Generator for `docs/tutorial/img/*.png` (offline) |
-| `tools/genhtml.cpp`   | Generator for `build/tutorial.html` (offline; not committed) |
+| `tools/genhtml.cpp`   | Generator for `build/tutorial.html` (built by CMake; output not committed) |
 | `test/`               | Correctness + strength harnesses (see below) |
 
 Conventions: C++ headers are `.hpp`. Commit eagerly, one logical change per
 commit. The `test/` programs are **not** wired into CMake — build them by hand
 with the commands below.
 
-The `tools/` programs are also offline, one-shot generators (not wired into
-CMake). Run them by hand whenever their output needs to change. Most of
-their outputs (`glyphs.hpp`, `shogi.ico`, `icon.hpp`,
-`docs/tutorial/img/*.png`) live in the source tree and are committed;
-`genhtml`'s output is the exception — `build/tutorial.html` is a build
-artefact, picked up from `build/` by downstream packaging (CPack,
-`web/build.sh`, etc.) rather than checked in. Regenerate:
+`genfont`, `genicon`, and `gentut` are offline one-shot generators - not
+wired into CMake, run by hand whenever their committed output
+(`glyphs.hpp`, `shogi.ico`, `icon.hpp`, `docs/tutorial/img/*.png`) needs
+to change:
 
 ```sh
 c++ -O2 -std=c++17 -Isrc -Itools tools/gentut.cpp -o build/gentut
 ./build/gentut       # writes docs/tutorial/img/*.png from the repo root
-
-c++ -O2 -std=c++17 tools/genhtml.cpp -o build/genhtml
-./build/genhtml      # writes build/tutorial.html (base64-embeds the PNGs)
 ```
+
+`genhtml` is the exception: it's a regular CMake target. `cmake --build`
+compiles `tools/genhtml.cpp`, runs it against `docs/tutorial/tutorial.md`,
+and writes `build/tutorial.html` (a single-file HTML with all the PNGs
+base64-embedded). The HTML is a build artefact, picked up from `build/` by
+downstream packaging (CPack, `web/build.sh`, etc.) rather than committed.
+Opt out with `-DSHOGI_BUILD_DOCS=OFF`. Cross-builds (mingw, Emscripten)
+need a separate host C++ compiler; CMake auto-detects `c++` / `g++` /
+`clang++` on the host, or you can pass `-DSHOGI_HOST_CXX=/path/to/cxx`.
 
 `tools/stb_image_write.h` is the single-header public-domain PNG encoder
 vendored for `gentut.cpp`, parallel to how `genfont.cpp` uses the vendored

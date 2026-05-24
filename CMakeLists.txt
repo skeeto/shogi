@@ -108,3 +108,67 @@ else()
   find_package(Threads REQUIRED)
   target_link_libraries(shogi PRIVATE Threads::Threads)
 endif()
+
+# --- Standalone HTML tutorial ----------------------------------------------
+# Builds a single-file build/tutorial.html (markdown + base64-embedded PNGs)
+# as part of the normal `cmake --build` pipeline.  Default ON; opt out with
+# -DSHOGI_BUILD_DOCS=OFF for builds where the doc isn't needed.
+#
+# Cross-builds (e.g. mingw, Emscripten) can't run the cross-compiled genhtml
+# on the build machine, so we look for a separate host C++ compiler and use
+# it to build genhtml.  If none is found we emit a warning and skip the doc
+# rather than failing the build.
+option(SHOGI_BUILD_DOCS "Build the standalone HTML tutorial" ON)
+
+if(SHOGI_BUILD_DOCS)
+  set(_shogi_genhtml_src "${CMAKE_CURRENT_SOURCE_DIR}/tools/genhtml.cpp")
+  set(_shogi_tutorial_md "${CMAKE_CURRENT_SOURCE_DIR}/docs/tutorial/tutorial.md")
+  set(_shogi_tutorial_html "${CMAKE_CURRENT_BINARY_DIR}/tutorial.html")
+  file(GLOB _shogi_tutorial_imgs
+       "${CMAKE_CURRENT_SOURCE_DIR}/docs/tutorial/img/*.png")
+
+  if(CMAKE_CROSSCOMPILING)
+    # Cross-build: the cross compiler (mingw / emscripten / ...) produces a
+    # binary that can't run on the build machine.  Find a host C++ compiler
+    # to compile genhtml separately.
+    find_program(SHOGI_HOST_CXX NAMES c++ g++ clang++
+                 DOC "Host C++ compiler for tools/genhtml.cpp (cross-build)")
+    if(SHOGI_HOST_CXX)
+      set(_shogi_genhtml "${CMAKE_CURRENT_BINARY_DIR}/genhtml")
+      add_custom_command(
+        OUTPUT "${_shogi_genhtml}"
+        COMMAND "${SHOGI_HOST_CXX}" -O2 -std=c++17
+                "${_shogi_genhtml_src}" -o "${_shogi_genhtml}"
+        DEPENDS "${_shogi_genhtml_src}"
+        COMMENT "Building genhtml (host C++)"
+        VERBATIM)
+      set(_shogi_genhtml_dep "${_shogi_genhtml}")
+    else()
+      message(WARNING
+        "SHOGI_BUILD_DOCS=ON but no host C++ compiler found on PATH "
+        "(looked for c++, g++, clang++).  Skipping tutorial.html.  "
+        "Pass -DSHOGI_BUILD_DOCS=OFF to silence this warning, or "
+        "-DSHOGI_HOST_CXX=/path/to/host/c++ to set one explicitly.")
+      set(SHOGI_BUILD_DOCS OFF)
+    endif()
+  else()
+    # Native build: use the project's own compiler.  Don't install the tool -
+    # it's a build artefact only.
+    add_executable(genhtml tools/genhtml.cpp)
+    set(_shogi_genhtml "$<TARGET_FILE:genhtml>")
+    set(_shogi_genhtml_dep genhtml)
+  endif()
+endif()
+
+if(SHOGI_BUILD_DOCS)
+  add_custom_command(
+    OUTPUT "${_shogi_tutorial_html}"
+    COMMAND "${_shogi_genhtml}" "${_shogi_tutorial_html}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    DEPENDS "${_shogi_genhtml_dep}"
+            "${_shogi_tutorial_md}"
+            ${_shogi_tutorial_imgs}
+    COMMENT "Generating tutorial.html"
+    VERBATIM)
+  add_custom_target(tutorial_html ALL DEPENDS "${_shogi_tutorial_html}")
+endif()
