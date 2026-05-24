@@ -100,6 +100,18 @@ if(APPLE)
     MACOSX_BUNDLE_SHORT_VERSION_STRING  "${PROJECT_VERSION}"
     MACOSX_BUNDLE_GUI_IDENTIFIER        "com.nullprogram.shogi"
     MACOSX_BUNDLE_ICON_FILE             "shogi.icns")
+
+  # Ad-hoc sign the local-build bundle so a locally-built DMG installed
+  # into /Applications launches without Gatekeeper rejecting it.  '--sign -'
+  # is the ad-hoc identity: cryptographically valid but not tied to an Apple
+  # developer ID.  Enough for personal / dev use; real public distribution
+  # still wants a Developer ID + notarisation.  CPack's install pipeline
+  # rewrites the executable's dylib paths and invalidates this signature,
+  # so the installed bundle is re-signed in the packaging block below.
+  add_custom_command(TARGET shogi POST_BUILD
+    COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:shogi>"
+    COMMENT "Ad-hoc signing $<TARGET_BUNDLE_DIR_NAME:shogi>"
+    VERBATIM)
 endif()
 
 if(MSVC)
@@ -206,6 +218,32 @@ if(NOT EMSCRIPTEN)
   install(TARGETS shogi RUNTIME DESTINATION . BUNDLE DESTINATION .)
   if(SHOGI_BUILD_DOCS)
     install(FILES "${_shogi_tutorial_html}" DESTINATION .)
+  endif()
+
+  # macOS: by default we link against a shared SDL3, so the installed bundle
+  # needs to carry that dylib next to the executable (otherwise the @rpath
+  # reference fails to resolve at /Applications and the app silently exits
+  # at launch).  Static builds skip this entirely.  After repointing the
+  # dylib we re-sign, since both install_name_tool rewrites and any
+  # @rpath/install-name change invalidate the original ad-hoc signature.
+  if(APPLE)
+    if(NOT shogi_sdl_static)
+      install(FILES "$<TARGET_FILE:SDL3::SDL3>"
+              DESTINATION "shogi.app/Contents/Frameworks")
+      install(CODE [[
+        set(_exe "${CMAKE_INSTALL_PREFIX}/shogi.app/Contents/MacOS/shogi")
+        execute_process(COMMAND install_name_tool -change
+                        @rpath/libSDL3.0.dylib
+                        @executable_path/../Frameworks/libSDL3.0.dylib
+                        "${_exe}")
+      ]])
+    endif()
+    install(CODE [[
+      message(STATUS "Ad-hoc re-signing ${CMAKE_INSTALL_PREFIX}/shogi.app")
+      execute_process(
+        COMMAND codesign --force --sign -
+                "${CMAKE_INSTALL_PREFIX}/shogi.app")
+    ]])
   endif()
 
   set(CPACK_PACKAGE_NAME "shogi")

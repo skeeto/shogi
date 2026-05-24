@@ -43,7 +43,7 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `src/ui.cpp`          | SDL3 rendering, input, game flow |
 | `src/glyphs.hpp`      | Embedded glyph atlas (ASCII + kanji), generated |
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
-| `tools/genicon.cpp`   | Generator for `src/shogi.{ico,icns}` + `src/icon.hpp` (offline) |
+| `tools/genicon.cpp`   | Generator for `src/shogi.{ico,icns}` + `src/icon.hpp` (offline, takes a TTF) |
 | `tools/gentut.cpp`    | Generator for `docs/tutorial/img/*.png` (offline) |
 | `tools/genhtml.cpp`   | Generator for `build/tutorial.html` (built by CMake; output not committed) |
 | `test/`               | Correctness + strength harnesses (see below) |

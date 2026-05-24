@@ -6,11 +6,18 @@
 // The picture is the in-game gold-general tile: an up-pointing pentagon - the
 // same signed-distance silhouette as ui.cpp's buildTileTextures() - in the
 // brighter of the game's two piece face colours so the icon pops, with the 金
-// kanji taken from the committed glyphs.hpp atlas.  No font file needed.
+// kanji on top.  The kanji is rasterised fresh from a Shippori Mincho TTF at
+// each icon size; the committed src/glyphs.hpp atlas (60 px) is too small
+// for the 128 px+ icns entries the macOS Dock and Cmd-Tab switcher use.
 //
 // Build & run from the repo root:
 //   c++ -O2 -std=c++17 -Isrc -Itools -o /tmp/genicon tools/genicon.cpp
-//   /tmp/genicon                  # writes src/shogi.{ico,icns} and icon.hpp
+//   /tmp/genicon tools/ShipporiMincho-Regular.ttf
+//      # writes src/shogi.{ico,icns} and src/icon.hpp
+//
+// TTF is the same Shippori Mincho file genfont uses; not committed (see
+// .gitignore), re-download from Google Fonts / the upstream repo when
+// regeneration is needed.
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -21,10 +28,8 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"       // PNG encoder (used by writeIcns)
-
-#include "glyphs.hpp"              // shogi::KANJI_GLYPHS, GLYPH_PIX, GlyphInfo
-
-using namespace shogi;
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"          // font rasteriser (used to render 金)
 
 namespace {
 
@@ -62,23 +67,48 @@ RGBA over(RGBA dst, RGBA src, float sa) {
               uint8_t(oa * 255.f + 0.5f)};
 }
 
-// Bilinear sample of the 8-bit 金 coverage bitmap, 0..1, 0 outside the bbox.
-float sampleGold(float gx, float gy) {
-  const GlyphInfo& g = KANJI_GLYPHS[4];          // 4 = gold general (金)
+// One freshly-rasterised glyph: 8-bit coverage bitmap + dimensions.
+struct Glyph { std::vector<uint8_t> pix; int w = 0, h = 0; };
+
+// Bilinear sample of an 8-bit coverage bitmap, 0..1, 0 outside the bbox.
+// When the bitmap is rendered at (almost) the same size we sample at, this
+// degenerates into a near-1:1 lookup and the result is pixel-sharp.
+float sampleGlyph(const Glyph& g, float gx, float gy) {
   int x0 = int(std::floor(gx)), y0 = int(std::floor(gy));
   float fx = gx - x0, fy = gy - y0;
   auto px = [&](int x, int y) -> float {
     if (x < 0 || y < 0 || x >= g.w || y >= g.h) return 0.f;
-    return GLYPH_PIX[g.pix + size_t(y) * g.w + x] / 255.f;
+    return g.pix[size_t(y) * g.w + x] / 255.f;
   };
   float a = px(x0, y0)     * (1 - fx) + px(x0 + 1, y0)     * fx;
   float b = px(x0, y0 + 1) * (1 - fx) + px(x0 + 1, y0 + 1) * fx;
   return a * (1 - fy) + b * fy;
 }
 
+// Rasterise one codepoint from `font` so its *bounding box* (not the design
+// em, which is what stbtt_ScaleForPixelHeight targets) is `wantH` pixels
+// tall.  For a glyph like 金 the em is ~33% taller than the bbox, so naive
+// "render at pxHeight=wantH" produces a visibly smaller glyph than expected.
+Glyph rasterize(stbtt_fontinfo& font, int codepoint, int wantH) {
+  Glyph g;
+  int x0, y0, x1, y1;
+  stbtt_GetCodepointBox(&font, codepoint, &x0, &y0, &x1, &y1);
+  if (y1 <= y0) return g;
+  float sc = float(wantH) / float(y1 - y0);
+  int xo = 0, yo = 0;
+  unsigned char* bmp = stbtt_GetCodepointBitmap(&font, sc, sc, codepoint,
+                                                &g.w, &g.h, &xo, &yo);
+  if (bmp) {
+    g.pix.assign(bmp, bmp + size_t(g.w) * g.h);
+    stbtt_FreeBitmap(bmp, nullptr);
+  }
+  return g;
+}
+
 // Render the gold-general tile at SxS, straight-alpha RGBA, transparent
-// outside the pentagon.
-std::vector<RGBA> renderTile(int S) {
+// outside the pentagon.  Re-rasterises 金 from `font` at the size needed
+// for this tile so the kanji is pixel-sharp at any S.
+std::vector<RGBA> renderTile(int S, stbtt_fontinfo& font) {
   std::vector<RGBA> img(size_t(S) * S, RGBA{0, 0, 0, 0});
 
   // Up-pointing pentagon - ui.cpp buildTileTextures(), but with a slimmer
@@ -98,10 +128,12 @@ std::vector<RGBA> renderTile(int S) {
 
   // 金 placement, proportional to the pentagon and sitting toward the wide
   // bottom end (like drawPiece()), but a little smaller so the strokes keep
-  // well clear of the icon's edges.
-  const GlyphInfo& g = KANJI_GLYPHS[4];
-  const float gh = 0.57f * (B - T);
-  const float gw = g.w * (gh / g.h);
+  // well clear of the icon's edges.  Rasterised at the exact target height
+  // so the bilinear sample below ends up effectively 1:1.
+  const float ghF = 0.57f * (B - T);
+  Glyph g = rasterize(font, 0x91D1, int(ghF + 0.5f));  // 金
+  const float gh = float(g.h);                         // actual rendered size
+  const float gw = float(g.w);
   const float gcx = S * 0.5f, gcy = T + 0.56f * (B - T);
 
   for (int y = 0; y < S; ++y)
@@ -120,9 +152,9 @@ std::vector<RGBA> renderTile(int S) {
 
       // 金 glyph - clipped to the face (ic) so a stroke can never spill onto
       // the border or beyond the tile.
-      float gx = (fx - (gcx - gw / 2)) / gw * g.w;
-      float gy = (fy - (gcy - gh / 2)) / gh * g.h;
-      p = over(p, kanjiCol, sampleGold(gx, gy) * ic);
+      float gx = (fx - (gcx - gw / 2));
+      float gy = (fy - (gcy - gh / 2));
+      p = over(p, kanjiCol, sampleGlyph(g, gx, gy) * ic);
 
       img[size_t(y) * S + x] = p;
     }
@@ -255,14 +287,15 @@ void be32(std::vector<uint8_t>& v, uint32_t x) {
 // the right one for the display it's drawing on.
 struct IcnsEntry { const char* type; int size; };
 
-void writeIcns(const char* path, const std::vector<IcnsEntry>& entries) {
+void writeIcns(const char* path, stbtt_fontinfo& font,
+               const std::vector<IcnsEntry>& entries) {
   std::vector<uint8_t> f;
   f.push_back('i'); f.push_back('c'); f.push_back('n'); f.push_back('s');
   be32(f, 0);                                // total length, patched below
 
   for (const auto& e : entries) {
     int n = e.size;
-    auto rgba = downscale(renderTile(2 * n), 2 * n, n);   // 2x supersample
+    auto rgba = downscale(renderTile(2 * n, font), 2 * n, n);  // 2x supersample
     auto png  = rgbaToPng(rgba, n);
     f.push_back(e.type[0]); f.push_back(e.type[1]);
     f.push_back(e.type[2]); f.push_back(e.type[3]);
@@ -279,6 +312,19 @@ void writeIcns(const char* path, const std::vector<IcnsEntry>& entries) {
   std::fwrite(f.data(), 1, f.size(), fp);
   std::fclose(fp);
   std::printf("%s  (%zu bytes, %zu entries)\n", path, f.size(), entries.size());
+}
+
+// Slurp a file's bytes (used to load the TTF).
+std::vector<unsigned char> readFile(const char* path) {
+  FILE* f = std::fopen(path, "rb");
+  if (!f) { std::fprintf(stderr, "cannot open %s\n", path); std::exit(1); }
+  std::fseek(f, 0, SEEK_END);
+  long n = std::ftell(f);
+  std::fseek(f, 0, SEEK_SET);
+  std::vector<unsigned char> buf(n);
+  if (std::fread(buf.data(), 1, n, f) != size_t(n)) std::exit(1);
+  std::fclose(f);
+  return buf;
 }
 
 void writeIconHeader(const char* path, const std::vector<RGBA>& px, int N) {
@@ -303,16 +349,29 @@ void writeIconHeader(const char* path, const std::vector<RGBA>& px, int N) {
 
 }  // namespace
 
-int main() {
-  // Render each size at 2x and box-downscale it.  The 金 comes from a 60px
-  // atlas bitmap; rendering near its native size (rather than blowing one
-  // big master up) keeps the strokes crisp.
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::fprintf(stderr, "usage: %s SHIPPORI_MINCHO.ttf\n",
+                 argc > 0 ? argv[0] : "genicon");
+    return 1;
+  }
+  auto ttf = readFile(argv[1]);
+  stbtt_fontinfo font;
+  if (!stbtt_InitFont(&font, ttf.data(),
+                      stbtt_GetFontOffsetForIndex(ttf.data(), 0))) {
+    std::fprintf(stderr, "stbtt_InitFont failed on %s\n", argv[1]);
+    return 1;
+  }
+
+  // Render each size at 2x and box-downscale it.  The 金 is freshly
+  // rasterised at the target height inside renderTile() so the strokes stay
+  // crisp from 16 px (Windows .ico) all the way up to 1024 px (macOS retina).
 
   // --- Windows .ico + embedded window icon ---
   const std::vector<int> winSizes = {16, 32, 48, 64};
   std::vector<std::vector<RGBA>> icons;
   for (int n : winSizes)
-    icons.push_back(downscale(renderTile(2 * n), 2 * n, n));
+    icons.push_back(downscale(renderTile(2 * n, font), 2 * n, n));
   writeIco("src/shogi.ico", winSizes, icons);
   writeIconHeader("src/icon.hpp", icons.back(), 64);   // window icon = 64px
 
@@ -321,7 +380,7 @@ int main() {
   // variants of 16/32/128/256 respectively, and they're what the task
   // switcher actually picks up on a retina display.  icp4/icp5/icp6 are
   // older 1x small sizes still useful as fallbacks.
-  writeIcns("src/shogi.icns", {
+  writeIcns("src/shogi.icns", font, {
     {"icp4",   16}, {"icp5",   32}, {"icp6",  64},
     {"ic07", 128}, {"ic08", 256}, {"ic09", 512}, {"ic10", 1024},
     {"ic11",  32}, {"ic12",  64}, {"ic13", 256}, {"ic14", 512},
