@@ -30,11 +30,27 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `src/ui.cpp`          | SDL3 rendering, input, game flow |
 | `src/glyphs.hpp`      | Embedded glyph atlas (ASCII + kanji), generated |
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
+| `tools/genicon.cpp`   | Generator for `src/shogi.ico` + `src/icon.hpp` (offline) |
+| `tools/gentut.cpp`    | Generator for `docs/tutorial/img/*.png` (offline) |
 | `test/`               | Correctness + strength harnesses (see below) |
 
 Conventions: C++ headers are `.hpp`. Commit eagerly, one logical change per
 commit. The `test/` programs are **not** wired into CMake — build them by hand
 with the commands below.
+
+The `tools/` programs are also offline, one-shot generators (not wired into
+CMake). Run them by hand whenever their output needs to change; the output
+(`glyphs.hpp`, `shogi.ico`, `icon.hpp`, `docs/tutorial/img/*.png`) is
+committed. Regenerate the tutorial PNGs with:
+
+```sh
+c++ -O2 -std=c++17 -Isrc -Itools tools/gentut.cpp -o build/gentut
+./build/gentut       # writes docs/tutorial/img/*.png from the repo root
+```
+
+`tools/stb_image_write.h` is the single-header public-domain PNG encoder
+vendored for `gentut.cpp`, parallel to how `genfont.cpp` uses the vendored
+`tools/stb_truetype.h`.
 
 ## Engine architecture (one-paragraph orientation)
 

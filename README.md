@@ -7,6 +7,13 @@ multi-threaded, incremental Monte-Carlo Tree Search (MCTS) AI.
 
 ![](docs/screenshot.png)
 
+## Learning shogi
+
+New to the game? **[docs/tutorial/tutorial.md](docs/tutorial/tutorial.md)** is
+a beginner's guide to shogi, covering every piece and rule with illustrations
+in the same visual style as the program, plus a sample opening, the Mino
+castle, and the Climbing Silver attack.
+
 ## Features
 
 - **Three play modes** — human vs human (hotseat), human vs computer (either
