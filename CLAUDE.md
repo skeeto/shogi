@@ -7,15 +7,22 @@ Tree Search AI. Human-vs-human, human-vs-computer, computer-vs-computer.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j                 # produces build/shogi + build/tutorial.html
 ./build/shogi
 ```
 
 SDL3 is found locally or fetched (pinned tarball + SHA-256) via `FetchContent`.
 
+A `cmake --build <build> --target package` step bundles the executable and
+`tutorial.html` into a flat ZIP via CPack: `shogi-1.0-win64.zip` for the
+mingw cross-build, `shogi-1.0-Darwin.zip` on a macOS native build, and so
+on. Skipped automatically for Emscripten (which has its own assembly path).
+
 WebAssembly build: `web/build.sh` (needs the Emscripten SDK) builds two
 variants into `build-web/` — multi-threaded (`-pthread`, CMake `SHOGI_PTHREAD`)
 and single-threaded — and `web/index.html` picks one per browser. The
+script also copies `tutorial.html` next to the wasm artefacts; the in-page
+shell shows a "Beginner's guide to shogi" link just below the canvas. The
 single-threaded path (`SHOGI_NO_THREADS`, Emscripten without pthreads) has no
 worker threads: `Engine::pump()` runs the search inline each frame.
 

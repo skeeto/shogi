@@ -172,3 +172,33 @@ if(SHOGI_BUILD_DOCS)
     VERBATIM)
   add_custom_target(tutorial_html ALL DEPENDS "${_shogi_tutorial_html}")
 endif()
+
+# --- Packaging --------------------------------------------------------------
+# A simple ZIP bundling the shogi executable and tutorial.html, produced via
+# `cmake --build <build> --target package` (or `cpack` directly).  Designed
+# primarily for the mingw cross-build's Windows .exe + tutorial.html bundle,
+# but works on any native target too.
+#
+# Emscripten is skipped: web/build.sh assembles build-web/ for that path,
+# including tutorial.html (see the explicit copy in that script).
+if(NOT EMSCRIPTEN)
+  install(TARGETS shogi RUNTIME DESTINATION .)
+  if(SHOGI_BUILD_DOCS)
+    install(FILES "${_shogi_tutorial_html}" DESTINATION .)
+  endif()
+
+  set(CPACK_GENERATOR "ZIP")
+  set(CPACK_PACKAGE_NAME "shogi")
+  set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Shogi - Japanese chess with an MCTS AI")
+  set(CPACK_VERBATIM_VARIABLES YES)
+  # Make Windows builds (incl. the mingw cross-build) read as "win64" rather
+  # than the verbose CMake default "Windows-AMD64".
+  if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(CPACK_SYSTEM_NAME "win64")
+  endif()
+  # Flat layout: shogi(.exe) and tutorial.html at the ZIP root, no extra dir.
+  set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+
+  include(CPack)
+endif()

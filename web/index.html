@@ -15,13 +15,17 @@
      syncCanvasSize() sets the backing store to device resolution.  The page
      only needs to centre it. */
   canvas { display: block; background: #000; outline: none; }
-  #status { padding: 10px; font-size: 14px; color: #7f7f88; }
+  #status { padding: 10px 10px 0; font-size: 14px; color: #7f7f88; }
+  #links  { padding: 6px 10px 10px; font-size: 14px; }
+  #links a { color: #b5a672; text-decoration: none; }
+  #links a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <canvas id="canvas" width="1024" height="720"
         tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
 <div id="status">loading...</div>
+<div id="links"><a href="tutorial.html" target="_blank">Beginner Tutorial</a></div>
 
 <!-- Tries to cross-origin-isolate the page (via a service worker) so the
      multi-threaded build can use SharedArrayBuffer.  On the first visit this
