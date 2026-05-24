@@ -25,8 +25,8 @@ Three rules give shogi its character:
 2. **Promotion.** When a piece enters, leaves, or moves within the last three
    ranks of the board (your opponent's side), you may flip it to a more
    powerful form for the rest of the game.
-3. **No colour.** Both players use the same pieces - they're all the same
-   colour, identified only by which direction their pointed top faces. Pieces
+3. **No color.** Both players use the same pieces - they're all the same
+   color, identified only by which direction their pointed top faces. Pieces
    you capture become yours.
 
 These three rules together mean shogi games rarely run out of material; the
@@ -45,7 +45,7 @@ two knights, two lances, and nine pawns.
 The player at the bottom of the diagram moves first. In Japanese they're
 called _sente_ ("the one who goes first", often translated "Black"); the
 other side is _gote_ ("the one who follows", "White"). Pieces have no actual
-colour: you can tell which is which by which way the pointed top of the
+color: you can tell which is which by which way the pointed top of the
 piece faces. Yours point away from you; your opponent's point toward you.
 
 ---
@@ -80,7 +80,7 @@ exactly like a chess rook.
 
 The bishop slides any number of empty squares along a diagonal - exactly
 like a chess bishop. Note that each side has only one bishop, and they
-start on opposite-coloured squares: a bishop can never attack the enemy
+start on opposite-colored squares: a bishop can never attack the enemy
 bishop directly.
 
 ### Gold general · 金将 (kinshō)
@@ -108,7 +108,7 @@ deploy in attack; they're also the gold's most common partner in a castle.
 The knight is the only piece that jumps. It moves two squares forward and
 one to the side - a smaller pattern than the chess knight, and it can never
 move backward or sideways. A shogi knight only has two destination squares;
-once you let it past the centre, it cannot retreat.
+once you let it past the center, it cannot retreat.
 
 ### Lance · 香車 (kyōsha)
 
@@ -327,7 +327,7 @@ turn to building **castles** around their kings.
 
 A castle is a defensive formation around the king, usually built before
 attacking. The most popular castle for a player whose rook has _swung_ to
-the centre or left (a Ranging Rook strategy) is the **Mino** (美濃囲い).
+the center or left (a Ranging Rook strategy) is the **Mino** (美濃囲い).
 
 The diagrams below show only Black's pieces, since White is busy building
 their own castle on the opposite side of the board and would just be
@@ -381,11 +381,11 @@ plugs it by adding more moves.
 
 ## 10. An attacking idea: Climbing Silver
 
-Castles are defence. The other side of an opening plan is the attack -
+Castles are defense. The other side of an opening plan is the attack -
 where the silver, bishop, and rook combine to break through somewhere on
 the enemy side of the board. **Climbing Silver** (棒銀 _bōgin_, literally
 "stick silver") is the most famous attacking pattern: the silver from file
-3 marches straight up the rook's file to crash through White's defences.
+3 marches straight up the rook's file to crash through White's defenses.
 
 Again, only Black's pieces are shown - imagine White's army on the other
 side of the board, defending their own king.
