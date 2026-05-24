@@ -32,6 +32,7 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
 | `tools/genicon.cpp`   | Generator for `src/shogi.ico` + `src/icon.hpp` (offline) |
 | `tools/gentut.cpp`    | Generator for `docs/tutorial/img/*.png` (offline) |
+| `tools/genhtml.cpp`   | Generator for `build/tutorial.html` (offline; not committed) |
 | `test/`               | Correctness + strength harnesses (see below) |
 
 Conventions: C++ headers are `.hpp`. Commit eagerly, one logical change per
@@ -39,18 +40,28 @@ commit. The `test/` programs are **not** wired into CMake — build them by hand
 with the commands below.
 
 The `tools/` programs are also offline, one-shot generators (not wired into
-CMake). Run them by hand whenever their output needs to change; the output
-(`glyphs.hpp`, `shogi.ico`, `icon.hpp`, `docs/tutorial/img/*.png`) is
-committed. Regenerate the tutorial PNGs with:
+CMake). Run them by hand whenever their output needs to change. Most of
+their outputs (`glyphs.hpp`, `shogi.ico`, `icon.hpp`,
+`docs/tutorial/img/*.png`) live in the source tree and are committed;
+`genhtml`'s output is the exception — `build/tutorial.html` is a build
+artefact, picked up from `build/` by downstream packaging (CPack,
+`web/build.sh`, etc.) rather than checked in. Regenerate:
 
 ```sh
 c++ -O2 -std=c++17 -Isrc -Itools tools/gentut.cpp -o build/gentut
 ./build/gentut       # writes docs/tutorial/img/*.png from the repo root
+
+c++ -O2 -std=c++17 tools/genhtml.cpp -o build/genhtml
+./build/genhtml      # writes build/tutorial.html (base64-embeds the PNGs)
 ```
 
 `tools/stb_image_write.h` is the single-header public-domain PNG encoder
 vendored for `gentut.cpp`, parallel to how `genfont.cpp` uses the vendored
-`tools/stb_truetype.h`.
+`tools/stb_truetype.h`. `genhtml.cpp` has no third-party deps: it parses a
+narrow markdown subset (ATX headings, `**bold**`, `_italic_`, `` `code` ``,
+`[]()` links, `![]()` images, `-`/`N.` lists, GFM pipe tables, `---` rules)
+and base64-encodes images inline. Tutorial.md is written to that subset, so
+the parser stays small.
 
 ## Engine architecture (one-paragraph orientation)
 

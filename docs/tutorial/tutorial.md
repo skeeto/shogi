@@ -43,8 +43,8 @@ two knights, two lances, and nine pawns.
 ![Starting position](img/start.png)
 
 The player at the bottom of the diagram moves first. In Japanese they're
-called *sente* ("the one who goes first", often translated "Black"); the
-other side is *gote* ("the one who follows", "White"). Pieces have no actual
+called _sente_ ("the one who goes first", often translated "Black"); the
+other side is _gote_ ("the one who follows", "White"). Pieces have no actual
 colour: you can tell which is which by which way the pointed top of the
 piece faces. Yours point away from you; your opponent's point toward you.
 
@@ -125,7 +125,7 @@ forward-only rook. It cannot move backward or sideways.
 
 The pawn steps one square straight forward. It captures the same way it
 moves - straight ahead, not diagonally as in chess. There are no
-two-square first moves and no *en passant*. With nine pawns per side
+two-square first moves and no _en passant_. With nine pawns per side
 forming a continuous wall, pawn structure dominates shogi strategy.
 
 ### Promotion: the back six pieces
@@ -143,7 +143,7 @@ with a red glyph and behaves differently:
 | Bishop | ![Horse](img/piece-horse.png) | uma / horse (馬) | bishop + one-square king moves |
 | Rook | ![Dragon](img/piece-dragon.png) | ryū / dragon (龍) | rook + one-square diagonal moves |
 
-Pawn/lance/knight/silver all promote to *something like a gold* - the small
+Pawn/lance/knight/silver all promote to _something like a gold_ - the small
 pieces get a useful upgrade, but stay equally valuable as defenders. The
 bishop and rook keep their existing power and gain extra short-range moves
 on top, becoming the most dangerous attackers on the board:
@@ -193,7 +193,7 @@ on it is illegal.](img/nifu.png)
 
 ### Uchifuzume (打ち歩詰め) - "checkmate by dropped pawn"
 
-You may not drop a pawn to deliver checkmate. (You *can* drop a pawn to
+You may not drop a pawn to deliver checkmate. (You _can_ drop a pawn to
 deliver check; the rule only forbids the drop when the position would be
 mate.) Any other piece is allowed to mate via drop - only the pawn drop is
 restricted.
@@ -217,7 +217,7 @@ three ranks; White promotes in the bottom three.
 ![Promotion zones for both sides shaded.](img/promotion-zone.png)
 
 When a promotable piece (pawn, lance, knight, silver, bishop, rook) moves
-*into*, *within*, or *out of* its promotion zone, you may choose to
+_into_, _within_, or _out of_ its promotion zone, you may choose to
 promote it as part of that move. The decision is one-time and permanent
 for that piece; once promoted it stays promoted until it is captured (at
 which point it reverts to its unpromoted form in the captor's hand).
@@ -249,7 +249,7 @@ loses.
 
 **Sennichite (千日手) - "thousand-day repetition".** If the same position
 (same pieces, same side to move, same hands) is reached four times, the
-game is a draw - *unless* the repetition was forced by perpetual check, in
+game is a draw - _unless_ the repetition was forced by perpetual check, in
 which case the perpetually-checking side loses. The intuition is "if the
 attacker can force the position to repeat by checking, the attack failed".
 
@@ -269,7 +269,7 @@ rule.](img/sennichite.png)
 ## 8. A sample opening: bishop exchange
 
 Let's play through the most direct opening in shogi - the **Bishop
-Exchange** (角換わり *kakugawari*). Each diagram shows the position after
+Exchange** (角換わり _kakugawari_). Each diagram shows the position after
 the move named above it; the green highlight marks the square the moving
 piece arrived on.
 
@@ -314,7 +314,7 @@ After only two exchanges, both players have a bishop in hand. **Pieces
 in hand are enormously powerful** - you can drop them as a fresh
 attacking piece anywhere there's an empty square, with no need to walk
 them across the board. The next several moves of a game like this one
-are about deciding *where* and *when* each side will eventually deploy
+are about deciding _where_ and _when_ each side will eventually deploy
 its bishop - the bishop in hand often shapes the rest of the opening
 more than the pieces still on the board.
 
@@ -326,7 +326,7 @@ turn to building **castles** around their kings.
 ## 9. Castles: the Mino
 
 A castle is a defensive formation around the king, usually built before
-attacking. The most popular castle for a player whose rook has *swung* to
+attacking. The most popular castle for a player whose rook has _swung_ to
 the centre or left (a Ranging Rook strategy) is the **Mino** (美濃囲い).
 
 The diagrams below show only Black's pieces, since White is busy building
@@ -383,7 +383,7 @@ plugs it by adding more moves.
 
 Castles are defence. The other side of an opening plan is the attack -
 where the silver, bishop, and rook combine to break through somewhere on
-the enemy side of the board. **Climbing Silver** (棒銀 *bōgin*, literally
+the enemy side of the board. **Climbing Silver** (棒銀 _bōgin_, literally
 "stick silver") is the most famous attacking pattern: the silver from file
 3 marches straight up the rook's file to crash through White's defences.
 
