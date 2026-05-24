@@ -40,15 +40,22 @@ constexpr int WBAR_X = 18, BBAR_X = 846, BAR_W = 16;
 // On a fast machine MIN_THINK_MS governs; on a slow one MAX_THINK_MS does.
 // MIN_PLAYOUTS is matched to MAX_NODES - search saturates once the tree fills.
 //
+// In computer-vs-computer mode nobody is waiting for a move, so the cap is
+// raised: on weak systems (esp. single-threaded WebAssembly) the original
+// MAX_THINK_MS would cut search off well before MIN_PLAYOUTS and produce
+// shallow, repetitive play.  Human-facing modes keep the responsive 10 s
+// ceiling.
+//
 // Both gates are short-circuited if the search settles: the MCTS-Solver
 // proves the root (engine.solved() goes true) or the visit count goes flat
 // for PLATEAU_MS.  In those cases - typically a forced mate or a fully
 // explored tree - there is nothing more to think about, so play at once
 // rather than burning the rest of MAX_THINK_MS.
-constexpr int    MIN_PLAYOUTS = 700000;
-constexpr Uint64 MIN_THINK_MS = 4000;
-constexpr Uint64 MAX_THINK_MS = 10000;
-constexpr Uint64 PLATEAU_MS   = 250;
+constexpr int    MIN_PLAYOUTS     = 700000;
+constexpr Uint64 MIN_THINK_MS     = 4000;
+constexpr Uint64 MAX_THINK_MS     = 10000;
+constexpr Uint64 MAX_THINK_MS_CVC = 40000;
+constexpr Uint64 PLATEAU_MS       = 250;
 
 struct RGBA { Uint8 r, g, b, a; };
 
@@ -908,7 +915,8 @@ SDL_AppResult App::iterate() {
       }
       bool settled = engine_.solved() ||
                      (now - thinkLastVisitChange_) >= PLATEAU_MS;
-      bool done = elapsed >= MAX_THINK_MS ||
+      Uint64 maxMs = (mode_ == MODE_CVC) ? MAX_THINK_MS_CVC : MAX_THINK_MS;
+      bool done = elapsed >= maxMs ||
                   settled ||
                   (elapsed >= MIN_THINK_MS && visits >= MIN_PLAYOUTS);
       if (done) {
