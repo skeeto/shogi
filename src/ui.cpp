@@ -1016,12 +1016,21 @@ bool App::init() {
   // tools/genicon.cpp).  SDL copies the pixels into the window, so the source
   // surface is only needed transiently.  A harmless no-op on the web build,
   // which has no OS window chrome.
+  //
+  // Skipped on macOS: SDL_SetWindowIcon there calls
+  // [NSApp setApplicationIconImage:] under the hood, which would overwrite
+  // the bundle's multi-resolution shogi.icns with this single low-res
+  // 64x64 RGBA - visibly blurry in the Dock and Cmd-Tab switcher.  Letting
+  // the bundle icon (via CFBundleIconFile in Info.plist) take over gives
+  // the OS the full range of sizes to pick from.
+#ifndef __APPLE__
   if (SDL_Surface* icon = SDL_CreateSurfaceFrom(
           ICON_W, ICON_H, SDL_PIXELFORMAT_RGBA32,
           const_cast<uint8_t*>(ICON_RGBA), ICON_W * 4)) {
     SDL_SetWindowIcon(win_, icon);
     SDL_DestroySurface(icon);
   }
+#endif
   syncCanvasSize();   // web: fit the canvas to the viewport at device density
   ren_ = SDL_CreateRenderer(win_, nullptr);
   if (!ren_) {
