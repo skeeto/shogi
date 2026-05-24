@@ -39,9 +39,16 @@ constexpr int WBAR_X = 18, BBAR_X = 846, BAR_W = 16;
 // playouts have been searched from the position, but never past MAX_THINK_MS.
 // On a fast machine MIN_THINK_MS governs; on a slow one MAX_THINK_MS does.
 // MIN_PLAYOUTS is matched to MAX_NODES - search saturates once the tree fills.
+//
+// Both gates are short-circuited if the search settles: the MCTS-Solver
+// proves the root (engine.solved() goes true) or the visit count goes flat
+// for PLATEAU_MS.  In those cases - typically a forced mate or a fully
+// explored tree - there is nothing more to think about, so play at once
+// rather than burning the rest of MAX_THINK_MS.
 constexpr int    MIN_PLAYOUTS = 700000;
 constexpr Uint64 MIN_THINK_MS = 4000;
 constexpr Uint64 MAX_THINK_MS = 10000;
+constexpr Uint64 PLATEAU_MS   = 250;
 
 struct RGBA { Uint8 r, g, b, a; };
 
@@ -368,8 +375,10 @@ class App {
   int pendFrom_ = 0, pendTo_ = 0;
   bool showSuggest_ = true;
 
-  bool thinking_ = false;
+  bool   thinking_ = false;
   Uint64 thinkStart_ = 0;
+  int    thinkLastVisits_ = 0;            // for plateau detection
+  Uint64 thinkLastVisitChange_ = 0;
 
   std::vector<Button> menuButtons_;
   Button newGameBtn_, suggestBtn_, promoYes_, promoNo_;
@@ -887,11 +896,21 @@ SDL_AppResult App::iterate() {
     if (!thinking_) {
       thinking_ = true;
       thinkStart_ = SDL_GetTicks();
+      thinkLastVisits_ = engine_.visits();
+      thinkLastVisitChange_ = thinkStart_;
     } else {
-      Uint64 elapsed = SDL_GetTicks() - thinkStart_;
+      Uint64 now     = SDL_GetTicks();
+      Uint64 elapsed = now - thinkStart_;
+      int    visits  = engine_.visits();
+      if (visits != thinkLastVisits_) {
+        thinkLastVisits_ = visits;
+        thinkLastVisitChange_ = now;
+      }
+      bool settled = engine_.solved() ||
+                     (now - thinkLastVisitChange_) >= PLATEAU_MS;
       bool done = elapsed >= MAX_THINK_MS ||
-                  (elapsed >= MIN_THINK_MS &&
-                   engine_.visits() >= MIN_PLAYOUTS);
+                  settled ||
+                  (elapsed >= MIN_THINK_MS && visits >= MIN_PLAYOUTS);
       if (done) {
         Move mv = engine_.stats().bestMove;
         if (mv.isNull() && !legal_.empty()) mv = legal_[0];
