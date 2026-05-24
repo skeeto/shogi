@@ -1,5 +1,6 @@
 // genicon.cpp - generates the application icon from the in-game artwork:
 //   src/shogi.ico  - multi-resolution Windows icon, compiled into the .exe
+//   src/shogi.icns - multi-resolution macOS icon, bundled into Shogi.app
 //   src/icon.hpp   - embedded RGBA window icon, set via SDL_SetWindowIcon
 //
 // The picture is the in-game gold-general tile: an up-pointing pentagon - the
@@ -8,8 +9,8 @@
 // kanji taken from the committed glyphs.hpp atlas.  No font file needed.
 //
 // Build & run from the repo root:
-//   c++ -O2 -std=c++17 -Isrc -o /tmp/genicon tools/genicon.cpp
-//   /tmp/genicon                  # writes src/shogi.ico and src/icon.hpp
+//   c++ -O2 -std=c++17 -Isrc -Itools -o /tmp/genicon tools/genicon.cpp
+//   /tmp/genicon                  # writes src/shogi.{ico,icns} and icon.hpp
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -17,6 +18,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"       // PNG encoder (used by writeIcns)
 
 #include "glyphs.hpp"              // shogi::KANJI_GLYPHS, GLYPH_PIX, GlyphInfo
 
@@ -221,6 +225,62 @@ void writeIco(const char* path, const std::vector<int>& sizes,
   std::printf(")\n");
 }
 
+// --- macOS .icns ----------------------------------------------------------
+// Modern icns is a container of typed entries; each entry holds a PNG-encoded
+// icon for one specific size.  Reference: Apple Icon Image format.
+
+// Encode an RGBA buffer as PNG into memory, via stb_image_write's callback.
+static void pngAppend(void* user, void* data, int size) {
+  auto* v = static_cast<std::vector<uint8_t>*>(user);
+  uint8_t* p = static_cast<uint8_t*>(data);
+  v->insert(v->end(), p, p + size);
+}
+std::vector<uint8_t> rgbaToPng(const std::vector<RGBA>& px, int N) {
+  std::vector<uint8_t> out;
+  stbi_write_png_to_func(&pngAppend, &out, N, N, 4,
+                         reinterpret_cast<const void*>(px.data()), N * 4);
+  return out;
+}
+
+// Big-endian 32-bit append (the icns header is all big-endian).
+void be32(std::vector<uint8_t>& v, uint32_t x) {
+  v.push_back(uint8_t(x >> 24));
+  v.push_back(uint8_t(x >> 16));
+  v.push_back(uint8_t(x >> 8));
+  v.push_back(uint8_t(x));
+}
+
+// One {type-code, side-length} entry.  Both 1x and 2x retina codes are
+// included for the sizes the OS actually asks for (32px upward); macOS picks
+// the right one for the display it's drawing on.
+struct IcnsEntry { const char* type; int size; };
+
+void writeIcns(const char* path, const std::vector<IcnsEntry>& entries) {
+  std::vector<uint8_t> f;
+  f.push_back('i'); f.push_back('c'); f.push_back('n'); f.push_back('s');
+  be32(f, 0);                                // total length, patched below
+
+  for (const auto& e : entries) {
+    int n = e.size;
+    auto rgba = downscale(renderTile(2 * n), 2 * n, n);   // 2x supersample
+    auto png  = rgbaToPng(rgba, n);
+    f.push_back(e.type[0]); f.push_back(e.type[1]);
+    f.push_back(e.type[2]); f.push_back(e.type[3]);
+    be32(f, uint32_t(png.size() + 8));        // entry length includes header
+    f.insert(f.end(), png.begin(), png.end());
+  }
+
+  uint32_t total = uint32_t(f.size());
+  f[4] = uint8_t(total >> 24); f[5] = uint8_t(total >> 16);
+  f[6] = uint8_t(total >> 8);  f[7] = uint8_t(total);
+
+  FILE* fp = std::fopen(path, "wb");
+  if (!fp) { std::fprintf(stderr, "cannot write %s\n", path); std::exit(1); }
+  std::fwrite(f.data(), 1, f.size(), fp);
+  std::fclose(fp);
+  std::printf("%s  (%zu bytes, %zu entries)\n", path, f.size(), entries.size());
+}
+
 void writeIconHeader(const char* path, const std::vector<RGBA>& px, int N) {
   FILE* fp = std::fopen(path, "w");
   if (!fp) { std::fprintf(stderr, "cannot write %s\n", path); std::exit(1); }
@@ -247,11 +307,24 @@ int main() {
   // Render each size at 2x and box-downscale it.  The 金 comes from a 60px
   // atlas bitmap; rendering near its native size (rather than blowing one
   // big master up) keeps the strokes crisp.
-  const std::vector<int> sizes = {16, 32, 48, 64};
+
+  // --- Windows .ico + embedded window icon ---
+  const std::vector<int> winSizes = {16, 32, 48, 64};
   std::vector<std::vector<RGBA>> icons;
-  for (int n : sizes)
+  for (int n : winSizes)
     icons.push_back(downscale(renderTile(2 * n), 2 * n, n));
-  writeIco("src/shogi.ico", sizes, icons);
+  writeIco("src/shogi.ico", winSizes, icons);
   writeIconHeader("src/icon.hpp", icons.back(), 64);   // window icon = 64px
+
+  // --- macOS .icns ---
+  // Standard modern sizes.  ic07-ic10 are 1x; ic11-ic14 are 2x retina
+  // variants of 16/32/128/256 respectively, and they're what the task
+  // switcher actually picks up on a retina display.  icp4/icp5/icp6 are
+  // older 1x small sizes still useful as fallbacks.
+  writeIcns("src/shogi.icns", {
+    {"icp4",   16}, {"icp5",   32}, {"icp6",  64},
+    {"ic07", 128}, {"ic08", 256}, {"ic09", 512}, {"ic10", 1024},
+    {"ic11",  32}, {"ic12",  64}, {"ic13", 256}, {"ic14", 512},
+  });
   return 0;
 }

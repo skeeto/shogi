@@ -7,9 +7,15 @@ Tree Search AI. Human-vs-human, human-vs-computer, computer-vs-computer.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j                 # produces build/shogi + build/tutorial.html
-./build/shogi
+cmake --build build -j                 # produces the binary + build/tutorial.html
+./build/shogi                          # Linux / Windows
+open build/shogi.app                   # macOS (the binary lives at
+                                       # build/shogi.app/Contents/MacOS/shogi)
 ```
+
+On macOS the target is built as `Shogi.app` (a proper bundle with `src/shogi.icns`
+in Resources and a generated Info.plist) so it carries its own Dock / Cmd-Tab
+icon and version metadata rather than appearing as a generic terminal binary.
 
 SDL3 is found locally or fetched (pinned tarball + SHA-256) via `FetchContent`.
 
@@ -37,7 +43,7 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `src/ui.cpp`          | SDL3 rendering, input, game flow |
 | `src/glyphs.hpp`      | Embedded glyph atlas (ASCII + kanji), generated |
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
-| `tools/genicon.cpp`   | Generator for `src/shogi.ico` + `src/icon.hpp` (offline) |
+| `tools/genicon.cpp`   | Generator for `src/shogi.{ico,icns}` + `src/icon.hpp` (offline) |
 | `tools/gentut.cpp`    | Generator for `docs/tutorial/img/*.png` (offline) |
 | `tools/genhtml.cpp`   | Generator for `build/tutorial.html` (built by CMake; output not committed) |
 | `test/`               | Correctness + strength harnesses (see below) |

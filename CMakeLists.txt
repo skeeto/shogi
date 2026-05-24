@@ -59,8 +59,11 @@ endif()
 
 # WIN32: link the Windows build for the GUI ("windows") subsystem so it opens
 # with no console window.  SDL supplies the WinMain entry point (see
-# src/ui.cpp).  The flag is silently ignored on every non-Windows platform.
-add_executable(shogi WIN32
+# src/ui.cpp).  MACOSX_BUNDLE makes the macOS build a proper Shogi.app so it
+# carries its own icon (for Dock and Cmd-Tab) and version metadata rather
+# than appearing as a generic terminal binary.  Both flags are silently
+# ignored on platforms they don't apply to.
+add_executable(shogi WIN32 MACOSX_BUNDLE
   src/board.cpp
   src/mate.cpp
   src/mcts.cpp
@@ -81,6 +84,22 @@ if(WIN32)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/shogi.rc.in
                  ${CMAKE_CURRENT_BINARY_DIR}/shogi.rc @ONLY)
   target_sources(shogi PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shogi.rc)
+endif()
+
+# macOS: drop src/shogi.icns into Shogi.app/Contents/Resources/ and point
+# the Info.plist at it.  CMake auto-generates a minimal Info.plist from the
+# MACOSX_BUNDLE_* properties (name, version, GUI identifier, icon file).
+if(APPLE)
+  set(_shogi_icns "${CMAKE_CURRENT_SOURCE_DIR}/src/shogi.icns")
+  target_sources(shogi PRIVATE "${_shogi_icns}")
+  set_source_files_properties("${_shogi_icns}" PROPERTIES
+    MACOSX_PACKAGE_LOCATION "Resources")
+  set_target_properties(shogi PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_NAME           "Shogi"
+    MACOSX_BUNDLE_BUNDLE_VERSION        "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING  "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_GUI_IDENTIFIER        "com.nullprogram.shogi"
+    MACOSX_BUNDLE_ICON_FILE             "shogi.icns")
 endif()
 
 if(MSVC)
@@ -182,7 +201,9 @@ endif()
 # Emscripten is skipped: web/build.sh assembles build-web/ for that path,
 # including tutorial.html (see the explicit copy in that script).
 if(NOT EMSCRIPTEN)
-  install(TARGETS shogi RUNTIME DESTINATION .)
+  # BUNDLE handles the macOS Shogi.app; RUNTIME handles the bare binary on
+  # every other platform.
+  install(TARGETS shogi RUNTIME DESTINATION . BUNDLE DESTINATION .)
   if(SHOGI_BUILD_DOCS)
     install(FILES "${_shogi_tutorial_html}" DESTINATION .)
   endif()
