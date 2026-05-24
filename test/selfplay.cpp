@@ -9,6 +9,7 @@
 //       -o build/selfplay
 //
 // Run:  ./build/selfplay [games] [playout-budget-per-move]
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -61,6 +62,8 @@ int main(int argc, char** argv) {
 
   int newWins = 0, baseWins = 0, draws = 0;
   int newKingOut = 0, baseKingOut = 0;   // games with an early (<ply 40) king walk
+  // Ply at game end per outcome class - mean/median reported below.
+  std::vector<int> newWinPlies, baseWinPlies, drawPlies;
 
   for (int g = 0; g < games; ++g) {
     bool newIsBlack = (g % 2 == 0);
@@ -68,11 +71,16 @@ int main(int argc, char** argv) {
     std::vector<uint64_t> hist{pos.hash};
     int result = -1;                     // 0 Black wins, 1 White wins, 2 draw
     bool newOut = false, baseOut = false;
+    int endPly = 400;                    // updated at any natural break
 
     for (int ply = 0; ply < 400; ++ply) {
       std::vector<S::Move> legal;
       S::generateLegalMoves(pos, legal);
-      if (legal.empty()) { result = (pos.stm() == S::BLACK) ? 1 : 0; break; }
+      if (legal.empty()) {
+        result = (pos.stm() == S::BLACK) ? 1 : 0;
+        endPly = ply;
+        break;
+      }
 
       bool newTurn = (pos.stm() == S::BLACK) == newIsBlack;
       S::Move mv;
@@ -105,21 +113,23 @@ int main(int argc, char** argv) {
       }
       int reps = 0;
       for (uint64_t h : hist) if (h == pos.hash) ++reps;
-      if (reps >= 4) { result = 2; break; }     // fourfold repetition
+      if (reps >= 4) { result = 2; endPly = ply + 1; break; }
     }
-    if (result < 0) result = 2;                 // ply cap -> draw
+    if (result < 0) result = 2;                 // ply cap -> draw (endPly=400)
 
     const char* tag;
-    if (result == 2) { ++draws; tag = "draw"; }
+    if (result == 2) { ++draws; drawPlies.push_back(endPly); tag = "draw"; }
     else {
       bool newWon = ((result == 0) == newIsBlack);
-      if (newWon) { ++newWins;  tag = "new";  }
-      else        { ++baseWins; tag = "base"; }
+      if (newWon) { ++newWins;  newWinPlies.push_back(endPly);  tag = "new";  }
+      else        { ++baseWins; baseWinPlies.push_back(endPly); tag = "base"; }
     }
     if (newOut)  ++newKingOut;
     if (baseOut) ++baseKingOut;
-    std::printf("game %2d/%d  new=%s  winner=%-4s  kingOut new=%d base=%d\n",
-                g + 1, games, newIsBlack ? "B" : "W", tag, newOut, baseOut);
+    std::printf("game %2d/%d  new=%s  winner=%-4s  ply=%d  "
+                "kingOut new=%d base=%d\n",
+                g + 1, games, newIsBlack ? "B" : "W", tag, endPly,
+                newOut, baseOut);
     std::fflush(stdout);
   }
   newEng.stop();
@@ -135,5 +145,21 @@ int main(int argc, char** argv) {
                 -400.0 * std::log10(1.0 / score - 1.0));
   std::printf("early king-walks: new in %d game(s), baseline in %d game(s)\n",
               newKingOut, baseKingOut);
+
+  // Game-length summary per outcome class.  Median printed only when n>=5.
+  auto report = [](const char* label, std::vector<int>& v) {
+    int n = int(v.size());
+    if (n == 0) { std::printf("%-10s: n=0\n", label); return; }
+    double sum = 0.0;
+    for (int p : v) sum += p;
+    std::printf("%-10s: n=%-3d  ply mean=%.1f  median=", label, n, sum / n);
+    if (n < 5) { std::printf("n/a\n"); return; }
+    std::sort(v.begin(), v.end());
+    int med = (n & 1) ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+    std::printf("%d\n", med);
+  };
+  report("new-wins",  newWinPlies);
+  report("base-wins", baseWinPlies);
+  report("draws",     drawPlies);
   return 0;
 }
