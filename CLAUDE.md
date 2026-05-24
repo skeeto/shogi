@@ -90,8 +90,13 @@ is what the MCTS scores leaves with (no random rollouts). MCTS uses PUCT with
 heuristic move priors; `cpuct` is a tunable field (default 2.0). Children are
 materialised lazily — PUCT ranges over both the realised children and the
 not-yet-realised moves, so the search never spends an evaluation on a move it
-would not explore. An MCTS-Solver propagates proven win/loss/draw values up
-the tree, with mate distance so it plays the shortest forced win, and stops
+would not explore. At root pick (`bestChild`), when the top two children's
+visit counts are within `closeRatio` (0.50) of each other, the tiebreak goes
+to the higher STM-relative win prob when that gap exceeds `valueMargin`
+(0.01) — fires ~1.5 times per move at budget 4000 and gains ~+30 Elo over
+the visit-only AlphaZero default. An MCTS-Solver propagates proven
+win/loss/draw values up the tree, with mate distance so it plays the
+shortest forced win, and stops
 the search once the root is proven. After each (re)root one worker also runs
 a bounded df-pn proof-number search for a forced mate on the root, catching
 mates the sampling search can miss. Sennichite (fourfold repetition) and
@@ -202,8 +207,9 @@ How it works:
 - Engines use `setPosition` each move (no tree reuse) so the per-move budget
   stays clean.
 - Colours alternate every game. Output: `new W - base L - draw D`, a score
-  percentage, an approximate Elo delta (`-400*log10(1/score - 1)`), and how
-  many games each side walked its king off the back two ranks before ply 40.
+  percentage, an approximate Elo delta (`-400*log10(1/score - 1)`), how
+  many games each side walked its king off the back two ranks before ply 40,
+  and per-result-class game length (mean + median ply when the game ended).
 
 Reference result (30 games, budget 2500): new `30-0-0`, 100% — the search
 rework beats this baseline every game, so `8a6430f` now only catches gross
@@ -225,8 +231,12 @@ done
 Like `selfplay.cpp`, but plays against a snapshot of an earlier build under
 `test/prev/` (namespace `shogiprev`) instead of the fixed `8a6430f` baseline,
 with `tune.cpp`-style random openings. Since the engine now beats `8a6430f`
-every game, this is the tool for measuring an *incremental* change. Refresh
-`test/prev/` to the pre-change commit first:
+every game, this is the tool for measuring an *incremental* change. Reports
+the same Elo + per-result-class game-length output as `selfplay.cpp`, plus
+a `bestChildOverride` counter (how often the value-tiebreak in `bestChild`
+flipped the choice vs. visits-only — useful when sweeping the tiebreak's
+`closeRatio` and `valueMargin` knobs). Refresh `test/prev/` to the
+pre-change commit first:
 
 ```sh
 for f in board mate mcts engine; do for e in hpp cpp; do \
