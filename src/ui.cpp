@@ -366,9 +366,12 @@ class App {
   Screen screen_ = SCR_MENU;
   Mode mode_ = MODE_HVC;
   bool running_ = true;
-  int  webCssW_ = 0, webCssH_ = 0;     // last canvas CSS size synced (web)
   bool human_[2] = {true, true};
   bool flipped_ = false;               // CVH: orient with White at the bottom
+
+#ifdef __EMSCRIPTEN__
+  int  webCssW_ = 0, webCssH_ = 0;     // last canvas CSS size synced
+#endif
 
   Position pos_;
   std::vector<uint64_t> hashes_;
