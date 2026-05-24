@@ -304,6 +304,29 @@ g++ -O2 -std=c++17 -Isrc -pthread test/tune_eval.cpp \
   returns early once the visit count plateaus — a position the solver has
   settled, where searching further is pointless.
 
+## Tuning history (tried, dropped — don't repeat without a new angle)
+
+Engine knobs that were investigated and rejected, with the result.  If you
+have a fundamentally different idea for the same target, by all means
+retest — but a straight reapplication of any of these will reproduce the
+regression.
+
+- **Decisive-move bonus in `movePrior`** (when STM is winning, multiply
+  capture + check priors by ~1.5–1.8×).  At a 0.75 win-prob threshold the
+  bonus fired ~580 times per move and cost ≈22 Elo + made cur-wins ~13 plies
+  *longer* in 200-game `abprev` runs at budget 4000.  Tightening to a 0.90
+  threshold barely changed the fire rate and left Elo near-neutral with
+  game length still slightly worse.  Hypothesis: it fights MCTS's natural
+  consolidate-then-attack pattern.
+
+- **Asymmetric dynamic `cpuct`** (shrink `cpuct` toward `cpuct * (1 -
+  cpuctShrinkMax)` as the parent's STM win-prob approaches 1.0, full
+  `cpuct` when losing).  At `cpuctK=2, cpuctShrinkMax=0.5` it cost ≈14 Elo
+  on top of the value-tiebreak at 400 games; at `cpuctK=4,
+  cpuctShrinkMax=0.25` (very gentle) it landed within noise.  Less
+  exploration in winning positions consistently lost more than it gained,
+  even with the asymmetric guard.
+
 ## License
 
 Public domain — see `UNLICENSE`.
