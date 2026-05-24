@@ -121,6 +121,7 @@ class MCTS {
     double blackWinProb = 0.5;       // Black's estimated win probability
     int    rootVisits   = 0;
     std::vector<Move> pv;            // principal variation
+    bool   bestChildOverride = false;// value-tiebreak flipped vs visits-only
   };
   Stats snapshot();
   int   rootVisits();
@@ -130,6 +131,18 @@ class MCTS {
   bool  solved() const { return solved_.load(std::memory_order_relaxed); }
 
   double cpuct = 2.0;               // PUCT exploration constant (tunable)
+
+  // bestChild() at root pick: when the top two children are within
+  // closeRatio of each other in visit count, prefer the one with higher
+  // STM-relative win prob if the gap exceeds valueMargin.  Defaults tuned
+  // by A/B (200-game abprev at budget 4000) - a tighter ratio was too
+  // sparse and produced no measurable effect; these values produce ~1.5
+  // overrides/game and gain ~30 Elo + ~6 plies shorter won games.
+  // Set bestChildUseValue = false to fall back to the visit-only
+  // AlphaZero default.
+  double closeRatio        = 0.50;
+  double valueMargin       = 0.01;
+  bool   bestChildUseValue = true;
 
  private:
   // PUCT pick: either an existing child (untriedIdx < 0) or an index into

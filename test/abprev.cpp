@@ -75,6 +75,10 @@ int main(int argc, char** argv) {
   int curWins = 0, prevWins = 0, draws = 0;
   // Ply at game end per outcome class - mean/median reported below.
   std::vector<int> curWinPlies, prevWinPlies, drawPlies;
+  // Diagnostic: cumulative count of value-tiebreak overrides at root pick
+  // by the cur engine, summed across all games.  Sanity-checks the
+  // bestChildUseValue knob.
+  long curOverrides = 0;
 
   for (int g = 0; g < games; ++g) {
     bool curIsBlack = (g % 2 == 0);
@@ -115,7 +119,9 @@ int main(int argc, char** argv) {
       if (curTurn) {
         curEng.setPosition(pos, hist);
         waitBudget(curEng, budget);
-        mv = curEng.stats().bestMove;
+        auto st = curEng.stats();
+        mv = st.bestMove;
+        if (st.bestChildOverride) ++curOverrides;
         curEng.stop();
       } else {
         prevEng.setPosition(toPrev(pos));
@@ -173,5 +179,7 @@ int main(int argc, char** argv) {
   report("cur-wins",  curWinPlies);
   report("prev-wins", prevWinPlies);
   report("draws",     drawPlies);
+  std::printf("cur bestChildOverride: %ld total, %.2f per game\n",
+              curOverrides, double(curOverrides) / games);
   return 0;
 }

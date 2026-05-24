@@ -108,21 +108,46 @@ int playRank(const Node* c) {
   return (c->proven == PV_LOSS) ? 2 : (c->proven == PV_WIN) ? 0 : 1;
 }
 
-// Best child to play or display: prefer the highest rank; within a winning
-// rank take the shortest mate, within a losing rank the longest resistance,
-// otherwise the most-visited child (the robust MCTS choice).
-Node* bestChild(const Node* n) {
-  Node* best = nullptr;
+// Compare two children of `n`.  Within an unproven rank: visit count is the
+// default tiebreaker (AlphaZero-style "most robust"); when `useValue` is on
+// and the two candidates are within `closeRatio` of each other in visit
+// count, the higher STM-relative win prob wins (provided the gap exceeds
+// `valueMargin`).  Proven ranks always use the existing mate-distance rules.
+bool childIsBetter(const Node* n, const Node* c, const Node* best,
+                   double closeRatio, double valueMargin, bool useValue) {
+  int rc = playRank(c), rb = playRank(best);
+  if (rc != rb) return rc > rb;
+  if (rc == 2)  return c->provenDepth < best->provenDepth;     // shortest mate
+  if (rc == 0)  return c->provenDepth > best->provenDepth;     // longest defense
+  // Both unproven.
+  bool defaultBetter = c->visits > best->visits;
+  if (!useValue) return defaultBetter;
+  int hi = std::max(c->visits, best->visits);
+  int lo = std::min(c->visits, best->visits);
+  if (hi <= 0 || double(lo) / hi < closeRatio) return defaultBetter;
+  double cMean = (c->visits   > 0) ? c->valueBlack    / c->visits    : 0.5;
+  double bMean = (best->visits > 0) ? best->valueBlack / best->visits : 0.5;
+  double cStm  = (n->pos.stm() == BLACK) ? cMean : 1.0 - cMean;
+  double bStm  = (n->pos.stm() == BLACK) ? bMean : 1.0 - bMean;
+  if (std::abs(cStm - bStm) > valueMargin) return cStm > bStm;
+  return defaultBetter;
+}
+
+// Best child to play or display.  Tracks both the value-aware pick and the
+// pure visit-only pick in one pass; sets *overrideOut iff they differ
+// (used by Stats.bestChildOverride to diagnose how often the tiebreak fires).
+Node* bestChild(const Node* n, double closeRatio, double valueMargin,
+                bool useValue, bool* overrideOut = nullptr) {
+  Node* best    = nullptr;
+  Node* visBest = nullptr;
   for (Node* c : n->children) {
-    if (!best) { best = c; continue; }
-    int rc = playRank(c), rb = playRank(best);
-    bool better;
-    if      (rc != rb) better = rc > rb;
-    else if (rc == 2)  better = c->provenDepth < best->provenDepth;
-    else if (rc == 0)  better = c->provenDepth > best->provenDepth;
-    else               better = c->visits > best->visits;
-    if (better) best = c;
+    if (!best    || childIsBetter(n, c, best,    closeRatio, valueMargin,
+                                   useValue))
+      best = c;
+    if (!visBest || childIsBetter(n, c, visBest, 0.0, 0.0, false))
+      visBest = c;
   }
+  if (overrideOut) *overrideOut = (best != visBest);
   return best;
 }
 }  // namespace
@@ -426,12 +451,17 @@ MCTS::Stats MCTS::snapshot() {
     s.blackWinProb = provenValueBlack(root_);
   else if (root_->visits > 0)
     s.blackWinProb = root_->valueBlack / root_->visits;
-  // Walk the best child at each step to build the PV.
+  // Walk the best child at each step to build the PV.  Only the root pick
+  // reports its value-tiebreak override into Stats; the PV walk uses the
+  // same logic but doesn't expose the per-step flag.
   Node* n = root_;
+  bool override = false;
   while (n && !n->children.empty()) {
-    Node* best = bestChild(n);
+    bool* outFlag = (n == root_) ? &override : nullptr;
+    Node* best = bestChild(n, closeRatio, valueMargin, bestChildUseValue,
+                           outFlag);
     if (!best || best->visits == 0) break;
-    if (n == root_) s.bestMove = best->move;
+    if (n == root_) { s.bestMove = best->move; s.bestChildOverride = override; }
     s.pv.push_back(best->move);
     n = best;
     if (s.pv.size() > 16) break;
