@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shogi</title>
+<!-- Installable as a PWA.  The COOP/COEP service worker (enable-threads.js)
+     also satisfies the service-worker install criterion; in standalone mode
+     it still injects the cross-origin-isolation headers, so the threaded
+     build works in the installed app too (iOS standalone is the wobbly
+     case and falls back to single-threaded). -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1b20">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   html, body {
     margin: 0; height: 100%; background: #1a1b20; color: #cfcfd4;

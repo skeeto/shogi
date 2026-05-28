@@ -347,6 +347,33 @@ void writeIconHeader(const char* path, const std::vector<RGBA>& px, int N) {
   std::printf("%s  (%dx%d RGBA)\n", path, N, N);
 }
 
+// --- PWA icon -------------------------------------------------------------
+// A home-screen / installable-app icon: the gold-general tile composited
+// onto an opaque dark square (matching the web shell's #1a1b20 background)
+// so it reads as a filled app icon rather than a floating transparent
+// pentagon.  The tile is rendered at ~78% of the canvas and centred, which
+// keeps it inside the maskable "safe zone" (centre 80%) so it survives a
+// circular or squircle mask intact.
+void writePwaIcon(const char* path, int S, stbtt_fontinfo& font) {
+  const RGBA bg{26, 27, 32, 255};
+  std::vector<RGBA> img(size_t(S) * S, bg);
+  int inner = int(S * 0.78f + 0.5f);
+  std::vector<RGBA> tile = downscale(renderTile(2 * inner, font), 2 * inner,
+                                     inner);
+  int off = (S - inner) / 2;
+  for (int y = 0; y < inner; ++y)
+    for (int x = 0; x < inner; ++x) {
+      RGBA s = tile[size_t(y) * inner + x];
+      RGBA& d = img[size_t(y + off) * S + (x + off)];
+      d = over(d, s, s.a / 255.f);            // composite straight-alpha tile
+    }
+  if (!stbi_write_png(path, S, S, 4, img.data(), S * 4)) {
+    std::fprintf(stderr, "stbi_write_png failed for %s\n", path);
+    std::exit(1);
+  }
+  std::printf("%s  (%dx%d)\n", path, S, S);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -385,5 +412,9 @@ int main(int argc, char** argv) {
     {"ic07", 128}, {"ic08", 256}, {"ic09", 512}, {"ic10", 1024},
     {"ic11",  32}, {"ic12",  64}, {"ic13", 256}, {"ic14", 512},
   });
+
+  // --- PWA / home-screen icons (filled, maskable-safe) ---
+  writePwaIcon("web/icon-192.png", 192, font);
+  writePwaIcon("web/icon-512.png", 512, font);
   return 0;
 }

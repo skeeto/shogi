@@ -1,0 +1,15 @@
+{
+  "name": "Shogi",
+  "short_name": "Shogi",
+  "description": "Shogi (Japanese chess) with a multi-threaded MCTS AI.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a1b20",
+  "theme_color": "#1a1b20",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

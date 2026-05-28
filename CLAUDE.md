@@ -32,6 +32,14 @@ shell shows a "Beginner's guide to shogi" link just below the canvas. The
 single-threaded path (`SHOGI_NO_THREADS`, Emscripten without pthreads) has no
 worker threads: `Engine::pump()` runs the search inline each frame.
 
+The web build is also an installable PWA: `web/manifest.json` plus the
+generated `web/icon-{192,512}.png` (the gold-general on the shell's dark
+background, maskable-safe). `enable-threads.js` doubles as the required
+service worker, and because cross-origin isolation comes from the headers
+that worker injects (not from the display mode), the multi-threaded build
+runs in the installed standalone app too - except on iOS, where standalone
+service-worker support is shaky and it falls back to single-threaded.
+
 ## Source layout
 
 | File | Responsibility |
@@ -43,7 +51,7 @@ worker threads: `Engine::pump()` runs the search inline each frame.
 | `src/ui.cpp`          | SDL3 rendering, input, game flow |
 | `src/glyphs.hpp`      | Embedded glyph atlas (ASCII + kanji), generated |
 | `tools/genfont.cpp`   | Generator for `glyphs.hpp` (run offline, not built) |
-| `tools/genicon.cpp`   | Generator for `src/shogi.{ico,icns}` + `src/icon.hpp` (offline, takes a TTF) |
+| `tools/genicon.cpp`   | Generator for `src/shogi.{ico,icns}`, `src/icon.hpp`, `web/icon-{192,512}.png` (offline, takes a TTF) |
 | `tools/gentut.cpp`    | Generator for `docs/tutorial/img/*.png` (offline) |
 | `tools/genhtml.cpp`   | Generator for `build/tutorial.html` (built by CMake; output not committed) |
 | `test/`               | Correctness + strength harnesses (see below) |

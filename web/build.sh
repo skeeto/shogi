@@ -25,8 +25,10 @@ rm -rf build-web/*
 cp build-web-st/shogi-st.js build-web-st/shogi-st.wasm build-web/
 cp build-web-mt/shogi-mt.js build-web-mt/shogi-mt.wasm build-web/
 cp web/index.html web/enable-threads.js build-web/
+cp web/manifest.json web/icon-192.png web/icon-512.png build-web/
 # Either web build produces tutorial.html (same content); use the mt copy.
 cp build-web-mt/tutorial.html build-web/
 
 echo
-echo "Built build-web/: index.html, enable-threads.js, tutorial.html, shogi-{st,mt}.{js,wasm}"
+echo "Built build-web/: index.html, enable-threads.js, manifest.json,"
+echo "  icon-{192,512}.png, tutorial.html, shogi-{st,mt}.{js,wasm}"
